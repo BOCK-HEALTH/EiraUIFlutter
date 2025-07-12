@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
@@ -28,6 +28,12 @@ const double kSidebarWidth = 280.0;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Force English locale
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+  
   runApp(const EiraApp());
 }
 
@@ -39,13 +45,14 @@ class EiraApp extends StatelessWidget {
     return MaterialApp(
       title: 'Eira Mobile',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('en', 'US'), // Force English locale
       theme: ThemeData(
-        fontFamily: 'Inter',
+        fontFamily: 'Roboto', // Use system default font
         scaffoldBackgroundColor: kEiraBackground,
         primaryColor: kEiraYellow,
         textTheme: const TextTheme(
-          bodyLarge: TextStyle(color: kEiraText),
-          bodyMedium: TextStyle(color: kEiraText),
+          bodyLarge: TextStyle(color: kEiraText, fontFamily: 'Roboto'),
+          bodyMedium: TextStyle(color: kEiraText, fontFamily: 'Roboto'),
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: kEiraBackground,
@@ -55,7 +62,7 @@ class EiraApp extends StatelessWidget {
             color: kEiraText,
             fontSize: 20,
             fontWeight: FontWeight.w600,
-            fontFamily: 'Inter',
+            fontFamily: 'Roboto',
           ),
         ),
       ),
@@ -108,8 +115,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _videoPath;
   bool _isCameraInitialized = false;
   
-  // File handling
-  final List<File> _selectedFiles = [];
+  // File handling - these will be displayed above input and sent only when user presses send
+  final List<File> _pendingFiles = [];
   final ImagePicker _picker = ImagePicker();
   final Dio _dio = Dio();
   final TextEditingController _textController = TextEditingController();
@@ -146,7 +153,6 @@ class _HomeScreenState extends State<HomeScreen> {
       print('Audio recorder initialized successfully');
     } catch (e) {
       print('Error initializing audio recorder: $e');
-      _showErrorDialog('Failed to initialize audio recorder: $e');
     }
   }
 
@@ -178,7 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _startNewChat() {
     setState(() {
       _hasActiveChat = true;
-      _selectedFiles.clear();
+      _pendingFiles.clear();
       _recognizedText = '';
       _textController.clear();
       _messages.clear();
@@ -189,17 +195,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _requestPermissions() async {
-    Map<Permission, PermissionStatus> statuses = await [
-      Permission.microphone,
-      Permission.camera,
-      Permission.storage,
-    ].request();
-    
-    statuses.forEach((permission, status) {
-      if (status != PermissionStatus.granted) {
-        print('$permission permission denied');
-      }
-    });
+    try {
+      Map<Permission, PermissionStatus> statuses = await [
+        Permission.microphone,
+        Permission.camera,
+        Permission.storage,
+      ].request();
+      
+      statuses.forEach((permission, status) {
+        if (status != PermissionStatus.granted) {
+          print('$permission permission denied');
+        }
+      });
+    } catch (e) {
+      print('Error requesting permissions: $e');
+    }
   }
 
   Future<void> _startAudioRecording() async {
@@ -216,36 +226,38 @@ class _HomeScreenState extends State<HomeScreen> {
         await _initAudioRecorder();
       }
 
-      final tempDir = await getTemporaryDirectory();
-      final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.aac';
-      final filePath = '${tempDir.path}/$fileName';
-      
-      await _audioRecorder!.startRecorder(
-        toFile: filePath,
-        codec: Codec.aacADTS,
-      );
-      
-      setState(() {
-        _isRecordingAudio = true;
-        _audioPath = filePath;
-        _recognizedText = '';
-      });
-
-      // Start speech recognition
-      if (_speech.isAvailable) {
-        await _speech.listen(
-          onResult: (result) {
-            setState(() {
-              _recognizedText = result.recognizedWords;
-              _textController.text = _recognizedText;
-            });
-          },
-          listenFor: const Duration(minutes: 5),
-          pauseFor: const Duration(seconds: 3),
+      if (_audioRecorder != null) {
+        final tempDir = await getTemporaryDirectory();
+        final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.aac';
+        final filePath = '${tempDir.path}/$fileName';
+        
+        await _audioRecorder!.startRecorder(
+          toFile: filePath,
+          codec: Codec.aacADTS,
         );
-      }
+        
+        setState(() {
+          _isRecordingAudio = true;
+          _audioPath = filePath;
+          _recognizedText = '';
+        });
 
-      _showSnackBar('Recording started...', Colors.green);
+        // Start speech recognition
+        if (_speech.isAvailable) {
+          await _speech.listen(
+            onResult: (result) {
+              setState(() {
+                _recognizedText = result.recognizedWords;
+                _textController.text = _recognizedText;
+              });
+            },
+            listenFor: const Duration(minutes: 5),
+            pauseFor: const Duration(seconds: 3),
+          );
+        }
+
+        _showSnackBar('Recording started...', Colors.green);
+      }
     } catch (e) {
       print('Error starting audio recording: $e');
       _showErrorDialog('Failed to start audio recording: $e');
@@ -268,15 +280,10 @@ class _HomeScreenState extends State<HomeScreen> {
         if (recordedPath != null && File(recordedPath).existsSync()) {
           final file = File(recordedPath);
           setState(() {
-            _selectedFiles.add(file);
+            _pendingFiles.add(file);
           });
           
-          _showSnackBar('Audio recorded successfully!', Colors.green);
-          
-          // Add message with audio attachment
-          if (_recognizedText.isNotEmpty || _selectedFiles.isNotEmpty) {
-            _addMessage(_recognizedText.isEmpty ? "Audio message" : _recognizedText, true, [file]);
-          }
+          _showSnackBar('Audio recorded! Press send to share.', Colors.green);
         }
       }
     } catch (e) {
@@ -331,13 +338,10 @@ class _HomeScreenState extends State<HomeScreen> {
         final savedFile = File(file.path);
         if (savedFile.existsSync()) {
           setState(() {
-            _selectedFiles.add(savedFile);
+            _pendingFiles.add(savedFile);
           });
           
-          _showSnackBar('Video recorded successfully!', Colors.green);
-          
-          // Add message with video attachment
-          _addMessage("Video message", true, [savedFile]);
+          _showSnackBar('Video recorded! Press send to share.', Colors.green);
         }
       }
     } catch (e) {
@@ -363,14 +367,10 @@ class _HomeScreenState extends State<HomeScreen> {
         
         if (files.isNotEmpty) {
           setState(() {
-            _selectedFiles.addAll(files);
+            _pendingFiles.addAll(files);
           });
           
-          _showSnackBar('${files.length} file(s) selected', Colors.green);
-          
-          // Add message with file attachments
-          String fileNames = files.map((f) => path.basename(f.path)).join(', ');
-          _addMessage("Uploaded files: $fileNames", true, files);
+          _showSnackBar('${files.length} file(s) added. Press send to share.', Colors.green);
         }
       }
     } catch (e) {
@@ -386,19 +386,22 @@ class _HomeScreenState extends State<HomeScreen> {
         isUser: isUser,
         attachments: attachments,
       ));
+      
+      // Start new chat if not already active
+      if (!_hasActiveChat) {
+        _hasActiveChat = true;
+      }
     });
   }
 
-  String _getFileType(String path) {
-    final extension = path.split('.').last.toLowerCase();
-    if (['pdf'].contains(extension)) return 'document';
-    if (['jpg', 'jpeg', 'png'].contains(extension)) return 'image';
-    if (['mp4', 'mov'].contains(extension)) return 'video';
-    if (['mp3', 'aac', 'wav'].contains(extension)) return 'audio';
-    return 'file';
+  void _removePendingFile(int index) {
+    setState(() {
+      _pendingFiles.removeAt(index);
+    });
   }
 
   Future<void> _toggleRecording() async {
+    print('Toggle recording called - isRecording: $_isRecordingAudio');
     if (_isRecordingAudio) {
       await _stopAudioRecording();
     } else {
@@ -407,6 +410,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _toggleVideoRecording() async {
+    print('Toggle video recording called - isRecording: $_isRecordingVideo');
     if (_isRecordingVideo) {
       await _stopVideoRecording();
     } else {
@@ -415,9 +419,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _sendMessage() {
-    if (_textController.text.trim().isNotEmpty || _selectedFiles.isNotEmpty) {
+    print('Send message called - text: ${_textController.text.trim()}, files: ${_pendingFiles.length}');
+    
+    if (_textController.text.trim().isNotEmpty || _pendingFiles.isNotEmpty) {
       String messageText = _textController.text.trim();
-      List<File> attachments = List.from(_selectedFiles);
+      List<File> attachments = List.from(_pendingFiles);
       
       _addMessage(
         messageText.isEmpty ? "Files shared" : messageText, 
@@ -427,7 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
       
       setState(() {
         _textController.clear();
-        _selectedFiles.clear();
+        _pendingFiles.clear(); // Clear pending files after sending
         _recognizedText = '';
       });
       
@@ -482,13 +488,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
@@ -516,7 +524,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: IconButton(
             icon: const Icon(Icons.menu, color: Colors.white, size: 20),
-            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            onPressed: () {
+              print('Menu button pressed');
+              _scaffoldKey.currentState?.openDrawer();
+            },
           ),
         ),
         actions: [
@@ -527,12 +538,12 @@ class _HomeScreenState extends State<HomeScreen> {
               color: kEiraYellow,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Row(
+            child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.person, color: Colors.white, size: 16),
-                const SizedBox(width: 4),
-                Text("0", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                Icon(Icons.person, color: Colors.white, size: 16),
+                SizedBox(width: 4),
+                Text("0", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontFamily: 'Roboto')),
               ],
             ),
           ),
@@ -542,7 +553,9 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Stack(
         children: [
           Padding(
-            padding: const EdgeInsets.only(bottom: 140.0),
+            padding: EdgeInsets.only(
+              bottom: _pendingFiles.isNotEmpty ? 220.0 : 140.0, // Adjust based on pending files
+            ),
             child: _hasActiveChat
                 ? MessagesListView(messages: _messages)
                 : WelcomeView(onCapabilityTap: _startNewChat),
@@ -551,22 +564,224 @@ class _HomeScreenState extends State<HomeScreen> {
             bottom: 0,
             left: 0,
             right: 0,
-            child: ChatInputArea(
-              isRecordingAudio: _isRecordingAudio,
-              isRecordingVideo: _isRecordingVideo,
-              uploadedFiles: _selectedFiles,
-              recognizedText: _recognizedText,
-              textController: _textController,
-              onRecordToggle: _toggleRecording,
-              onFileAdd: _pickFiles,
-              onCameraOpen: _toggleVideoRecording,
-              onFileRemove: (index) => setState(() => _selectedFiles.removeAt(index)),
-              onSendMessage: _sendMessage,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Pending files display
+                if (_pendingFiles.isNotEmpty)
+                  PendingFilesDisplay(
+                    files: _pendingFiles,
+                    onRemove: _removePendingFile,
+                  ),
+                // Chat input area
+                ChatInputArea(
+                  isRecordingAudio: _isRecordingAudio,
+                  isRecordingVideo: _isRecordingVideo,
+                  recognizedText: _recognizedText,
+                  textController: _textController,
+                  onRecordToggle: _toggleRecording,
+                  onFileAdd: _pickFiles,
+                  onCameraOpen: _toggleVideoRecording,
+                  onSendMessage: _sendMessage,
+                  hasPendingFiles: _pendingFiles.isNotEmpty,
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+class PendingFilesDisplay extends StatelessWidget {
+  final List<File> files;
+  final Function(int) onRemove;
+
+  const PendingFilesDisplay({
+    super.key,
+    required this.files,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16.0),
+      decoration: BoxDecoration(
+        color: kEiraBackground,
+        border: Border(
+          top: BorderSide(color: kEiraBorder.withOpacity(0.3)),
+          bottom: BorderSide(color: kEiraBorder.withOpacity(0.3)),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.attach_file, color: kEiraTextSecondary, size: 16),
+              const SizedBox(width: 8),
+              Text(
+                'Attachments (${files.length})',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: kEiraTextSecondary,
+                  fontFamily: 'Roboto',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 60,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: files.length,
+              itemBuilder: (context, index) {
+                final file = files[index];
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: PendingFileChip(
+                    file: file,
+                    onRemove: () => onRemove(index),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PendingFileChip extends StatelessWidget {
+  final File file;
+  final VoidCallback onRemove;
+
+  const PendingFileChip({
+    super.key,
+    required this.file,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fileName = path.basename(file.path);
+    final fileSize = _formatFileSize(file.lengthSync());
+    final fileType = _getFileType(file.path);
+    
+    return Container(
+      width: 120,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border.all(color: kEiraBorder),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      _getFileIcon(file.path),
+                      color: kEiraYellow,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        fileType,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          color: kEiraTextSecondary,
+                          fontFamily: 'Roboto',
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  fileName,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: kEiraText,
+                    fontFamily: 'Roboto',
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  fileSize,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: kEiraTextSecondary,
+                    fontFamily: 'Roboto',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 2,
+            right: 2,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade400,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(
+                  Icons.close,
+                  color: Colors.white,
+                  size: 12,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  String _getFileType(String path) {
+    final extension = path.split('.').last.toLowerCase();
+    if (['pdf'].contains(extension)) return 'Document';
+    if (['jpg', 'jpeg', 'png'].contains(extension)) return 'Image';
+    if (['mp4', 'mov'].contains(extension)) return 'Video';
+    if (['mp3', 'aac', 'wav'].contains(extension)) return 'Audio';
+    return 'File';
+  }
+
+  IconData _getFileIcon(String path) {
+    final extension = path.split('.').last.toLowerCase();
+    if (['pdf'].contains(extension)) return Icons.picture_as_pdf;
+    if (['jpg', 'jpeg', 'png'].contains(extension)) return Icons.image;
+    if (['mp4', 'mov'].contains(extension)) return Icons.videocam;
+    if (['mp3', 'aac', 'wav'].contains(extension)) return Icons.audiotrack;
+    return Icons.insert_drive_file;
   }
 }
 
@@ -583,19 +798,19 @@ class AppDrawer extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(16.0),
-              child: Row(
+              child: const Row(
                 children: [
                   CircleAvatar(
                     backgroundColor: kEiraYellow,
                     radius: 20,
-                    child: const Text("O", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    child: Text("O", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Roboto')),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text("Owaiz", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-                      Text("123@gmail.com", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                      Text("Owaiz", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, fontFamily: 'Roboto')),
+                      Text("123@gmail.com", style: TextStyle(color: Colors.grey, fontSize: 12, fontFamily: 'Roboto')),
                     ],
                   ),
                 ],
@@ -605,9 +820,12 @@ class AppDrawer extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: ElevatedButton.icon(
-                onPressed: onNewSession,
+                onPressed: () {
+                  print('New Session button pressed');
+                  onNewSession();
+                },
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text("New Session", style: TextStyle(color: Colors.white)),
+                label: const Text("New Session", style: TextStyle(color: Colors.white, fontFamily: 'Roboto')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kEiraYellow,
                   minimumSize: const Size(double.infinity, 50),
@@ -622,21 +840,25 @@ class AppDrawer extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Recent Sessions", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                child: Text("Recent Sessions", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Roboto')),
               ),
             ),
             
             const SizedBox(height: 10),
             
             ListTile(
-              title: const Text("test2", style: TextStyle(fontSize: 14)),
-              subtitle: const Text("4 days ago", style: TextStyle(fontSize: 12)),
-              onTap: () {},
+              title: const Text("test2", style: TextStyle(fontSize: 14, fontFamily: 'Roboto')),
+              subtitle: const Text("4 days ago", style: TextStyle(fontSize: 12, fontFamily: 'Roboto')),
+              onTap: () {
+                print('Recent session tapped: test2');
+              },
             ),
             ListTile(
-              title: const Text("test", style: TextStyle(fontSize: 14)),
-              subtitle: const Text("6/5/2025", style: TextStyle(fontSize: 12)),
-              onTap: () {},
+              title: const Text("test", style: TextStyle(fontSize: 14, fontFamily: 'Roboto')),
+              subtitle: const Text("6/5/2025", style: TextStyle(fontSize: 12, fontFamily: 'Roboto')),
+              onTap: () {
+                print('Recent session tapped: test');
+              },
             ),
             
             const Spacer(),
@@ -644,8 +866,10 @@ class AppDrawer extends StatelessWidget {
             const Divider(color: kEiraBorder),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text("Logout", style: TextStyle(color: Colors.red)),
-              onTap: () {},
+              title: const Text("Logout", style: TextStyle(color: Colors.red, fontFamily: 'Roboto')),
+              onTap: () {
+                print('Logout tapped');
+              },
             ),
           ],
         ),
@@ -686,6 +910,7 @@ class WelcomeView extends StatelessWidget {
                   fontSize: 32,
                   fontWeight: FontWeight.w600,
                   color: kEiraText,
+                  fontFamily: 'Roboto',
                 ),
               ),
             ],
@@ -699,6 +924,7 @@ class WelcomeView extends StatelessWidget {
               fontSize: 16,
               color: kEiraTextSecondary,
               fontWeight: FontWeight.w400,
+              fontFamily: 'Roboto',
             ),
           ),
           
@@ -708,24 +934,33 @@ class WelcomeView extends StatelessWidget {
           Column(
             children: [
               CapabilityCard(
-                icon: '🏥',
+                icon: Icons.local_hospital,
                 title: 'Medical Assistance',
                 description: 'Get reliable medical information and health guidance',
-                onTap: onCapabilityTap,
+                onTap: () {
+                  print('Medical Assistance card tapped');
+                  onCapabilityTap();
+                },
               ),
               const SizedBox(height: 16),
               CapabilityCard(
-                icon: '💊',
+                icon: Icons.medication,
                 title: 'Medication Info',
                 description: 'Learn about medications, dosages, and potential interactions',
-                onTap: onCapabilityTap,
+                onTap: () {
+                  print('Medication Info card tapped');
+                  onCapabilityTap();
+                },
               ),
               const SizedBox(height: 16),
               CapabilityCard(
-                icon: '🧬',
+                icon: Icons.analytics,
                 title: 'Health Analysis',
                 description: 'Understand symptoms and get personalized health insights',
-                onTap: onCapabilityTap,
+                onTap: () {
+                  print('Health Analysis card tapped');
+                  onCapabilityTap();
+                },
               ),
             ],
           ),
@@ -738,7 +973,7 @@ class WelcomeView extends StatelessWidget {
 }
 
 class CapabilityCard extends StatelessWidget {
-  final String icon;
+  final IconData icon;
   final String title;
   final String description;
   final VoidCallback onTap;
@@ -780,11 +1015,10 @@ class CapabilityCard extends StatelessWidget {
                 color: kEiraYellow.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Center(
-                child: Text(
-                  icon,
-                  style: const TextStyle(fontSize: 24),
-                ),
+              child: Icon(
+                icon,
+                color: kEiraYellow,
+                size: 24,
               ),
             ),
             const SizedBox(width: 16),
@@ -798,6 +1032,7 @@ class CapabilityCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
                       color: kEiraText,
+                      fontFamily: 'Roboto',
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -807,6 +1042,7 @@ class CapabilityCard extends StatelessWidget {
                       fontSize: 14,
                       color: kEiraTextSecondary,
                       height: 1.3,
+                      fontFamily: 'Roboto',
                     ),
                   ),
                 ],
@@ -833,6 +1069,7 @@ class MessagesListView extends StatelessWidget {
           style: TextStyle(
             color: kEiraTextSecondary,
             fontSize: 16,
+            fontFamily: 'Roboto',
           ),
         ),
       );
@@ -883,7 +1120,7 @@ class MessageBubble extends StatelessWidget {
           CircleAvatar(
             backgroundColor: isUser ? kEiraText : kEiraYellow,
             child: isUser
-                ? const Text("U", style: TextStyle(color: Colors.white))
+                ? const Text("U", style: TextStyle(color: Colors.white, fontFamily: 'Roboto'))
                 : const Icon(Icons.health_and_safety, color: Colors.white, size: 20),
           ),
           const SizedBox(width: 12),
@@ -897,7 +1134,8 @@ class MessageBubble extends StatelessWidget {
                       isUser ? "You" : "Eira 0.1",
                       style: TextStyle(
                         fontWeight: FontWeight.bold, 
-                        color: isUser ? kEiraText : kEiraYellowHover
+                        color: isUser ? kEiraText : kEiraYellowHover,
+                        fontFamily: 'Roboto',
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -906,13 +1144,14 @@ class MessageBubble extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 12,
                         color: kEiraTextSecondary,
+                        fontFamily: 'Roboto',
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 if (text.isNotEmpty)
-                  Text(text, style: const TextStyle(height: 1.5)),
+                  Text(text, style: const TextStyle(height: 1.5, fontFamily: 'Roboto')),
                 if (attachments != null && attachments!.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   ...attachments!.map((file) => AttachmentChip(file: file)),
@@ -962,7 +1201,7 @@ class AttachmentChip extends StatelessWidget {
                   children: [
                     Text(
                       fileName, 
-                      style: const TextStyle(fontWeight: FontWeight.w500),
+                      style: const TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Roboto'),
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
@@ -970,6 +1209,7 @@ class AttachmentChip extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 12,
                         color: kEiraTextSecondary,
+                        fontFamily: 'Roboto',
                       ),
                     ),
                   ],
@@ -983,7 +1223,7 @@ class AttachmentChip extends StatelessWidget {
   }
 
   void _openFile(BuildContext context, File file) {
-    // TODO: Implement file viewer based on file type
+    print('Opening file: ${path.basename(file.path)}');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Opening ${path.basename(file.path)}')),
     );
@@ -1005,86 +1245,28 @@ class AttachmentChip extends StatelessWidget {
   }
 }
 
-class TypingIndicator extends StatefulWidget {
-  const TypingIndicator({super.key});
-
-  @override
-  State<TypingIndicator> createState() => _TypingIndicatorState();
-}
-
-class _TypingIndicatorState extends State<TypingIndicator> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        CircleAvatar(
-          backgroundColor: kEiraYellow,
-          child: const Icon(Icons.health_and_safety, color: Colors.white, size: 20),
-        ),
-        const SizedBox(width: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(20)),
-          child: Row(
-            children: List.generate(3, (index) {
-              return AnimatedBuilder(
-                animation: _controller,
-                builder: (context, child) {
-                  final double t = ((_controller.value + (index * 0.2)) % 1.0);
-                  final double scale = 1.0 - (4.0 * math.pow(t - 0.5, 2));
-                  return Transform.scale(scale: scale, child: child);
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  child: CircleAvatar(radius: 4, backgroundColor: Colors.grey.shade500),
-                ),
-              );
-            }),
-          ),
-        )
-      ],
-    );
-  }
-}
-
 class ChatInputArea extends StatefulWidget {
   final bool isRecordingAudio;
   final bool isRecordingVideo;
-  final List<File> uploadedFiles;
   final String recognizedText;
   final TextEditingController textController;
   final VoidCallback onRecordToggle;
   final VoidCallback onFileAdd;
   final VoidCallback onCameraOpen;
-  final Function(int) onFileRemove;
   final VoidCallback onSendMessage;
+  final bool hasPendingFiles;
 
   const ChatInputArea({
     super.key,
     required this.isRecordingAudio,
     required this.isRecordingVideo,
-    required this.uploadedFiles,
     required this.recognizedText,
     required this.textController,
     required this.onRecordToggle,
     required this.onFileAdd,
     required this.onCameraOpen,
-    required this.onFileRemove,
     required this.onSendMessage,
+    required this.hasPendingFiles,
   });
 
   @override
@@ -1132,16 +1314,20 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                     controller: widget.textController,
                     decoration: const InputDecoration(
                       hintText: "Start typing a prompt",
-                      hintStyle: TextStyle(color: kEiraTextSecondary),
+                      hintStyle: TextStyle(color: kEiraTextSecondary, fontFamily: 'Roboto'),
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
                     ),
+                    style: const TextStyle(fontFamily: 'Roboto'),
                     maxLines: null,
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.add, color: kEiraTextSecondary),
-                  onPressed: widget.onFileAdd,
+                  onPressed: () {
+                    print('Add file button pressed');
+                    widget.onFileAdd();
+                  },
                 ),
                 Container(
                   margin: const EdgeInsets.only(right: 4),
@@ -1151,7 +1337,10 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.send, color: Colors.white),
-                    onPressed: widget.onSendMessage,
+                    onPressed: () {
+                      print('Send button pressed');
+                      widget.onSendMessage();
+                    },
                   ),
                 ),
               ],
@@ -1165,15 +1354,23 @@ class _ChatInputAreaState extends State<ChatInputArea> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _buildActionButton(
-                icon: Icons.mic,
-                label: "Talk",
-                onPressed: widget.onRecordToggle,
+                icon: widget.isRecordingAudio ? Icons.stop : Icons.mic,
+                label: widget.isRecordingAudio ? "Stop" : "Talk",
+                onPressed: () {
+                  print('Talk button pressed');
+                  widget.onRecordToggle();
+                },
+                isActive: widget.isRecordingAudio,
               ),
               const SizedBox(width: 24),
               _buildActionButton(
-                icon: Icons.videocam,
-                label: "Webcam",
-                onPressed: widget.onCameraOpen,
+                icon: widget.isRecordingVideo ? Icons.stop : Icons.videocam,
+                label: widget.isRecordingVideo ? "Stop" : "Webcam",
+                onPressed: () {
+                  print('Webcam button pressed');
+                  widget.onCameraOpen();
+                },
+                isActive: widget.isRecordingVideo,
               ),
             ],
           ),
@@ -1186,23 +1383,33 @@ class _ChatInputAreaState extends State<ChatInputArea> {
     required IconData icon,
     required String label,
     required VoidCallback onPressed,
+    bool isActive = false,
   }) {
     return InkWell(
       onTap: onPressed,
       borderRadius: BorderRadius.circular(8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? kEiraYellow.withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: kEiraText),
+            Icon(
+              icon, 
+              size: 20, 
+              color: isActive ? kEiraYellow : kEiraText
+            ),
             const SizedBox(width: 8),
             Text(
               label,
-              style: const TextStyle(
-                color: kEiraText,
+              style: TextStyle(
+                color: isActive ? kEiraYellow : kEiraText,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
+                fontFamily: 'Roboto',
               ),
             ),
           ],
