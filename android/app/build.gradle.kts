@@ -7,8 +7,11 @@ plugins {
 
 android {
     namespace = "com.example.flutter_application_1"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    
+    // CHANGE #1: Updated from 34 to 35 as required by plugins
+    compileSdkVersion(35) 
+    
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -22,10 +25,12 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.flutter_application_1"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        
+        targetSdkVersion(34) // Target can stay at 34 for now
+        
+        // CHANGE #2: Updated from 21 to 24 as required by flutter_sound
+        minSdkVersion(24)
+        
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

@@ -45,5 +45,16 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+<string>This app needs access to camera to take photos and videos for medical consultation.</string>
+
+<key>NSMicrophoneUsageDescription</key>
+<string>This app needs access to microphone to record voice messages for medical consultation.</string>
+
+<key>NSPhotoLibraryUsageDescription</key>
+<string>This app needs access to photo library to select images for medical consultation.</string>
+
+<key>NSSpeechRecognitionUsageDescription</key>
+<string>This app needs access to speech recognition to convert voice to text for medical consultation.</string>
 </dict>
 </plist>
