@@ -872,33 +872,16 @@ class WelcomeView extends StatelessWidget {
         children: [
           const SizedBox(height: 60),
           
-          // Eira title with icon
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: kEiraYellow,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.settings, color: Colors.white, size: 24), 
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                "Eira",
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w600,
-                  color: kEiraText,
-                  fontFamily: 'Roboto',
-                ),
-              ),
-            ],
+          // --- MODIFIED SECTION START ---
+          // Increased the width and height to make the logo larger
+          Image.asset(
+            'assets/images/Eira.png', // Correct path to your PNG logo
+            width: 250, // Value increased for a larger logo
+            height: 250, // Value increased for a larger logo
           ),
+          // --- MODIFIED SECTION END ---
           
-          const SizedBox(height: 16),
+          const SizedBox(height: 24), // Adjusted spacing
           
           const Text(
             "Eira - Your AI Health Assistant",
@@ -926,24 +909,28 @@ class WelcomeView extends StatelessWidget {
             itemBuilder: (context, index) {
               List<Map<String, dynamic>> cardsData = [
                 {
-                  'icon': Icons.local_hospital,
+                  'icon': Icons.medical_information_outlined, // Prescription/medical record icon
                   'title': 'Medical Assistance',
                   'description': 'Get reliable medical information and health guidance',
+                  'color': const Color(0xFF8A5FFC), // Purple
                 },
                 {
-                  'icon': Icons.medication,
+                  'icon': Icons.medication, // Pill/capsule icon
                   'title': 'Medication Info',
-                  'description': 'Learn about medications, dosages, and potential interactions',
+                  'description': 'Learn about medications, dosages, and interactions',
+                  'color': const Color(0xFFF97316), // Orange
                 },
                 {
-                  'icon': Icons.analytics,
+                  'icon': Icons.biotech_outlined, // DNA/analysis icon
                   'title': 'Health Analysis',
-                  'description': 'Understand symptoms and get personalized health insights',
+                  'description': 'Understand symptoms and get health insights',
+                  'color': const Color(0xFF3B82F6), // Blue
                 },
                 {
-                  'icon': Icons.favorite, // New icon for Wellness Tips
+                  'icon': Icons.favorite, // Heart icon
                   'title': 'Wellness Tips',
-                  'description': 'Receive personalized wellness and lifestyle recommendations',
+                  'description': 'Receive personalized wellness recommendations',
+                  'color': const Color(0xFFEC4899), // Pink
                 },
               ];
               
@@ -952,6 +939,7 @@ class WelcomeView extends StatelessWidget {
                 icon: card['icon'],
                 title: card['title'],
                 description: card['description'],
+                color: card['color'], // Pass color to the card
                 onTap: () {
                   print('${card['title']} card tapped');
                   onCapabilityTap();
@@ -971,6 +959,7 @@ class CapabilityCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String description;
+  final Color color; // Added color property
   final VoidCallback onTap;
 
   const CapabilityCard({
@@ -978,6 +967,7 @@ class CapabilityCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.description,
+    required this.color, // Added to constructor
     required this.onTap,
   });
 
@@ -1008,12 +998,12 @@ class CapabilityCard extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: kEiraYellow.withOpacity(0.1),
+                color: color.withOpacity(0.1), // Use passed color for background tint
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 icon,
-                color: kEiraYellow,
+                color: color, // Use passed color for the icon itself
                 size: 24,
               ),
             ),
