@@ -1,11 +1,11 @@
 name: flutter_application_1
 description: "A new Flutter project."
-publish_to: 'none'
+publish_to: "none"
 
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.8.1
+  sdk: ">=3.8.1 <4.0.0"
 
 dependencies:
   flutter:
@@ -15,15 +15,22 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_svg: ^2.0.10+1
 
-  # NATIVE FUNCTIONALITY PACKAGES (Corrected)
+  # NATIVE FUNCTIONALITY PACKAGES
   file_picker: ^10.2.0
   path_provider: ^2.1.3
   camera: ^0.11.0+1
   image_picker: ^1.1.2
   permission_handler: ^12.0.1
   video_player: ^2.8.6
-  
-  # Packages for Audio and API calls from your last code version
+
+  # Audio and API packages
   dio: ^5.4.3+1
   flutter_sound: ^9.3.0
   speech_to_text: ^7.1.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/health.png
+    - assets/images/Eira.svg
