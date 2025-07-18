@@ -14,6 +14,7 @@ import 'package:dio/dio.dart';
 import 'package:mime/mime.dart';
 import 'package:http_parser/http_parser.dart';
 
+
 // --- THEME AND STYLING ---
 const Color kEiraYellow = Color(0xFFFDB821);
 const Color kEiraYellowLight = Color(0xFFFFF8E6);
@@ -39,6 +40,8 @@ void main() async {
 
 class EiraApp extends StatelessWidget {
   const EiraApp({super.key});
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -244,12 +247,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (_audioRecorder != null) {
         final tempDir = await getTemporaryDirectory();
-        final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.aac';
+        
+        // Use .wav extension for the filename
+        final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
         final filePath = '${tempDir.path}/$fileName'; 
         
+        // Use the pcm16WAV codec to record a WAV file
         await _audioRecorder!.startRecorder(
           toFile: filePath,
-          codec: Codec.aacADTS,
+          codec: Codec.pcm16WAV,
         );
         
         setState(() {
@@ -365,29 +371,47 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // --- MODIFIED FUNCTION WITH FILE RENAME LOGIC ---
   Future<void> _stopVideoRecording() async {
     try {
       if (_cameraController != null && _isRecordingVideo) {
-        final file = await _cameraController!.stopVideoRecording();
+        final XFile tempFile = await _cameraController!.stopVideoRecording();
         
         setState(() {
           _isRecordingVideo = false;
         });
+
+        final File originalFile = File(tempFile.path);
         
-        final savedFile = File(file.path);
-        if (savedFile.existsSync()) {
+        // Define a new path with the correct .mp4 extension
+        final Directory directory = await getTemporaryDirectory();
+        final String newPath = path.join(
+          directory.path,
+          'video_${DateTime.now().millisecondsSinceEpoch}.mp4',
+        );
+
+        // Rename the temp file to the new path
+        final File newFile = await originalFile.rename(newPath);
+
+        print('✅ Video file renamed to: ${newFile.path}');
+        
+        if (newFile.existsSync()) {
           setState(() {
-            _pendingFiles.add(savedFile);
+            _pendingFiles.add(newFile); // Add the correctly named file
           });
           
           _showSnackBar('Video recorded! Press send to share.', Colors.green);
+        } else {
+          print('❌ Error: Renamed file does not exist at ${newFile.path}');
+          _showErrorDialog('Failed to save the recorded video file.');
         }
       }
     } catch (e) {
-      print('Error stopping video recording: $e');
+      print('❌ Error stopping video recording: $e');
       _showErrorDialog('Failed to stop video recording: $e');
     }
   }
+
 
   Future<void> _pickFiles() async {
     try {
@@ -688,29 +712,14 @@ class PendingFileChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fileName = path.basename(file.path);
-    final fileType = _getFileType(file.path);
-    
-    // Determine display name for recording types
-    String displayName;
-    IconData displayIcon;
-
-    if (fileType == 'Audio') {
-      displayName = 'Voice Recording';
-      displayIcon = Icons.mic;
-    } else if (fileType == 'Video') {
-      displayName = 'Video Recording';
-      displayIcon = Icons.videocam;
-    } else {
-      displayName = fileName;
-      displayIcon = _getFileIcon(file.path);
-    }
+    final displayName = path.basename(file.path); 
+    final displayIcon = _getFileIcon(file.path);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Smaller padding
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(20), // Pill shape
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: kEiraBorder),
       ),
       child: Row(
@@ -718,15 +727,15 @@ class PendingFileChip extends StatelessWidget {
         children: [
           Icon(
             displayIcon,
-            color: kEiraTextSecondary, // Icon color as in image
+            color: kEiraTextSecondary,
             size: 16,
           ),
-          const SizedBox(width: 6), // Smaller spacing
+          const SizedBox(width: 6),
           Flexible(
             child: Text(
               displayName,
               style: const TextStyle(
-                fontSize: 13, // Smaller font size
+                fontSize: 13,
                 color: kEiraText,
                 fontFamily: 'Roboto',
               ),
@@ -739,8 +748,8 @@ class PendingFileChip extends StatelessWidget {
             onTap: onRemove,
             child: const Icon(
               Icons.close,
-              color: kEiraTextSecondary, // Close icon color as in image
-              size: 14, // Smaller close icon
+              color: kEiraTextSecondary,
+              size: 14,
             ),
           ),
         ],
@@ -748,24 +757,17 @@ class PendingFileChip extends StatelessWidget {
     );
   }
 
-  String _getFileType(String path) {
-    final extension = path.split('.').last.toLowerCase();
-    if (['pdf'].contains(extension)) return 'Document';
-    if (['jpg', 'jpeg', 'png'].contains(extension)) return 'Image';
-    if (['mp4', 'mov'].contains(extension)) return 'Video';
-    if (['mp3', 'aac', 'wav'].contains(extension)) return 'Audio';
-    return 'File';
-  }
-
+  // This function now works correctly because the file extension is guaranteed to be .mp4
   IconData _getFileIcon(String path) {
     final extension = path.split('.').last.toLowerCase();
-    if (['pdf'].contains(extension)) return Icons.insert_drive_file; // Changed to generic file icon for PDF
+    if (['pdf'].contains(extension)) return Icons.insert_drive_file;
     if (['jpg', 'jpeg', 'png'].contains(extension)) return Icons.image;
     if (['mp4', 'mov'].contains(extension)) return Icons.videocam;
-    if (['mp3', 'aac', 'wav'].contains(extension)) return Icons.mic; // Changed to mic for audio files
+    if (['mp3', 'aac', 'wav'].contains(extension)) return Icons.mic;
     return Icons.insert_drive_file;
   }
 }
+
 
 class AppDrawer extends StatelessWidget {
   final VoidCallback onNewSession;
@@ -872,16 +874,13 @@ class WelcomeView extends StatelessWidget {
         children: [
           const SizedBox(height: 60),
           
-          // --- MODIFIED SECTION START ---
-          // Increased the width and height to make the logo larger
           Image.asset(
-            'assets/images/Eira.png', // Correct path to your PNG logo
-            width: 250, // Value increased for a larger logo
-            height: 250, // Value increased for a larger logo
+            'assets/images/Eira.png', 
+            width: 250, 
+            height: 250, 
           ),
-          // --- MODIFIED SECTION END ---
           
-          const SizedBox(height: 24), // Adjusted spacing
+          const SizedBox(height: 24), 
           
           const Text(
             "Eira - Your AI Health Assistant",
@@ -895,51 +894,50 @@ class WelcomeView extends StatelessWidget {
           
           const SizedBox(height: 60),
           
-          // Capability cards in 2x2 grid layout
           GridView.builder(
-            shrinkWrap: true, // Important to make GridView work inside SingleChildScrollView
-            physics: const NeverScrollableScrollPhysics(), // Disable GridView's own scrolling
+            shrinkWrap: true, 
+            physics: const NeverScrollableScrollPhysics(), 
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2, // 2 columns
-              crossAxisSpacing: 16.0, // Spacing between columns
-              mainAxisSpacing: 16.0, // Spacing between rows
-              childAspectRatio: 0.8, // Adjusted aspect ratio to give more vertical space
+              crossAxisCount: 2, 
+              crossAxisSpacing: 16.0, 
+              mainAxisSpacing: 16.0, 
+              childAspectRatio: 0.8, 
             ),
-            itemCount: 4, // Total number of cards
+            itemCount: 4, 
             itemBuilder: (context, index) {
               List<Map<String, dynamic>> cardsData = [
-                {
-                  'icon': Icons.medical_information_outlined, // Prescription/medical record icon
-                  'title': 'Medical Assistance',
-                  'description': 'Get reliable medical information and health guidance',
-                  'color': const Color(0xFF8A5FFC), // Purple
-                },
-                {
-                  'icon': Icons.medication, // Pill/capsule icon
-                  'title': 'Medication Info',
-                  'description': 'Learn about medications, dosages, and interactions',
-                  'color': const Color(0xFFF97316), // Orange
-                },
-                {
-                  'icon': Icons.biotech_outlined, // DNA/analysis icon
-                  'title': 'Health Analysis',
-                  'description': 'Understand symptoms and get health insights',
-                  'color': const Color(0xFF3B82F6), // Blue
-                },
-                {
-                  'icon': Icons.favorite, // Heart icon
-                  'title': 'Wellness Tips',
-                  'description': 'Receive personalized wellness recommendations',
-                  'color': const Color(0xFFEC4899), // Pink
-                },
-              ];
+   {
+    'icon': Icons.medical_information, 
+    'title': 'Medical Assistance',
+    'description': 'Get reliable medical information and health guidance',
+    'color': const Color(0xFF8A5FFC), 
+  },
+  {
+    'icon': Icons.medication, 
+    'title': 'Medication Info',
+    'description': 'Learn about medications, dosages, and interactions',
+    'color': const Color(0xFFF97316),
+  },
+  {
+    'icon': Icons.biotech, 
+    'title': 'Health Analysis',
+    'description': 'Understand symptoms and get preliminary health insights',
+    'color': const Color(0xFF3B82F6),
+  },
+  {
+    'icon': Icons.favorite, 
+    'title': 'Wellness Tips',
+    'description': 'Receive personalized wellness and lifestyle recommendations',
+    'color': const Color(0xFFEC4899),
+  },
+];
               
               final card = cardsData[index];
               return CapabilityCard(
                 icon: card['icon'],
                 title: card['title'],
                 description: card['description'],
-                color: card['color'], // Pass color to the card
+                color: card['color'], 
                 onTap: () {
                   print('${card['title']} card tapped');
                   onCapabilityTap();
@@ -959,7 +957,7 @@ class CapabilityCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String description;
-  final Color color; // Added color property
+  final Color color; 
   final VoidCallback onTap;
 
   const CapabilityCard({
@@ -967,7 +965,7 @@ class CapabilityCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.description,
-    required this.color, // Added to constructor
+    required this.color, 
     required this.onTap,
   });
 
@@ -977,8 +975,7 @@ class CapabilityCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        // Removed fixed width to allow GridView to manage sizing
-        padding: const EdgeInsets.all(16), // Reduced padding slightly
+        padding: const EdgeInsets.all(16), 
         decoration: BoxDecoration(
           color: kEiraBackground,
           border: Border.all(color: kEiraBorder.withOpacity(0.3)),
@@ -991,29 +988,29 @@ class CapabilityCard extends StatelessWidget {
             ),
           ],
         ),
-        child: Column( // Changed to Column for vertical alignment of icon and text
+        child: Column( 
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1), // Use passed color for background tint
+                color: color.withOpacity(0.1), 
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 icon,
-                color: color, // Use passed color for the icon itself
+                color: color, 
                 size: 24,
               ),
             ),
-            const SizedBox(height: 10), // Spacing between icon and title
+            const SizedBox(height: 10), 
             Text(
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 15, // Slightly reduced font size
+                fontSize: 15, 
                 color: kEiraText,
                 fontFamily: 'Roboto',
               ),
@@ -1023,13 +1020,13 @@ class CapabilityCard extends StatelessWidget {
               description,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 13, // Slightly reduced font size
+                fontSize: 13, 
                 color: kEiraTextSecondary,
                 height: 1.3,
                 fontFamily: 'Roboto',
               ),
-              maxLines: 3, // Allow up to 3 lines for description
-              overflow: TextOverflow.ellipsis, // Add ellipsis for overflow
+              maxLines: 3, 
+              overflow: TextOverflow.ellipsis, 
             ),
           ],
         ),
@@ -1066,7 +1063,7 @@ class MessagesListView extends StatelessWidget {
         return MessageBubble(
           isUser: message.isUser,
           text: message.text,
-          attachments: message.attachments, // Pass attachments back to MessageBubble
+          attachments: message.attachments, 
           timestamp: message.timestamp,
         );
       },

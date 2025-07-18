@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "481687418209",
+    "project_id": "eira-4026b",
+    "storage_bucket": "eira-4026b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:481687418209:android:ef2635f3066eee601ec120",
+        "android_client_info": {
+          "package_name": "Eira.flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAVsRMn1ntVDW0SpXucQ3Vl8r_JMBYYAGc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
