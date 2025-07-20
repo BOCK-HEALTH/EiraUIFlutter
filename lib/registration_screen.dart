@@ -22,6 +22,7 @@ class RegistrationScreen extends StatefulWidget {
 }
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
+  final TextEditingController _usernameController = TextEditingController(); // New controller for username
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
@@ -30,6 +31,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   void dispose() {
+    _usernameController.dispose(); // Dispose the new controller
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -47,10 +49,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     });
 
     try {
-      await _auth.createUserWithEmailAndPassword(
+      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
+
+      // Update user's display name (username)
+      if (userCredential.user != null && _usernameController.text.trim().isNotEmpty) {
+        await userCredential.user!.updateDisplayName(_usernameController.text.trim());
+      }
+
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const HomeScreen()),
@@ -137,6 +145,23 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
+                TextField(
+                  controller: _usernameController, // Username field
+                  keyboardType: TextInputType.text,
+                  decoration: InputDecoration(
+                    hintText: "Username",
+                    hintStyle: TextStyle(color: kEiraTextSecondary.withOpacity(0.7), fontFamily: 'Roboto'),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  ),
+                  style: const TextStyle(fontFamily: 'Roboto', color: kEiraText),
+                ),
+                const SizedBox(height: 16),
                 TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,

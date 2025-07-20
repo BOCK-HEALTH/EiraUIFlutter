@@ -107,8 +107,8 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 Image.asset(
                   'assets/images/Eira.png', // Ensure this asset is in your pubspec.yaml
-                  width: 120,
-                  height: 120,
+                  width: 250,
+                  height: 250,
                 ),
                 const SizedBox(height: 24),
                 const Text(

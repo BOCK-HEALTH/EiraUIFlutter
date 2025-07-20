@@ -565,6 +565,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final userName = user?.displayName ?? user?.email?.split('@')[0] ?? "User";
+    final userEmail = user?.email ?? "Guest";
+    final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : "U";
+
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
@@ -586,20 +591,138 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: kEiraYellow,
-              borderRadius: BorderRadius.circular(20),
+          PopupMenuButton<String>(
+            offset: const Offset(0, 40), // Adjust offset to position dropdown below the button
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: kEiraBorder.withOpacity(0.5)),
             ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text("U", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontFamily: 'Roboto')),
-                SizedBox(width: 4),
-                Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 16),
-              ],
+            elevation: 8,
+            color: kEiraBackground,
+            onSelected: (value) async {
+              if (value == 'logout') {
+                print('Logout tapped');
+                await FirebaseAuth.instance.signOut(); // Sign out the user
+                if (context.mounted) {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    (Route<dynamic> route) => false,
+                  );
+                }
+              } else if (value == 'profile') {
+                print('Profile tapped');
+                // TODO: Implement navigation to profile management screen
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Profile management coming soon!')),
+                );
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              // User Info Header
+              PopupMenuItem<String>(
+                value: 'user_info',
+                enabled: false, // Make this item non-selectable
+                padding: EdgeInsets.zero,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: kEiraBackground,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: kEiraYellow,
+                        child: Text(
+                          userInitial,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            fontFamily: 'Roboto',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              userName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                                color: kEiraText,
+                                fontFamily: 'Roboto',
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              userEmail,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: kEiraTextSecondary,
+                                fontFamily: 'Roboto',
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: kEiraTextSecondary, size: 18),
+                        onPressed: () {
+                          print('Edit profile tapped');
+                          // TODO: Implement navigation to edit profile
+                          Navigator.of(context).pop(); // Close the dropdown
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Edit profile coming soon!')),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const PopupMenuDivider(), // Divider below user info
+
+              // Logout Option
+              PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    const Icon(Icons.logout, color: Colors.red, size: 20),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Logout',
+                      style: TextStyle(color: Colors.red, fontFamily: 'Roboto', fontSize: 15),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            child: Container(
+              margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0), // Remove padding here
+              decoration: BoxDecoration(
+                color: kEiraYellow,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: CircleAvatar(
+                radius: 20, // Make it a perfect circle
+                backgroundColor: kEiraYellow,
+                child: Text(
+                  userInitial,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    fontFamily: 'Roboto',
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -760,27 +883,7 @@ class AppDrawer extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            Container(
-              padding: const EdgeInsets.all(16.0),
-              child: const Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: kEiraYellow,
-                    radius: 20,
-                    child: Text("O", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Roboto')),
-                  ),
-                  SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Owaiz", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, fontFamily: 'Roboto')),
-                      Text("123@gmail.com", style: TextStyle(color: Colors.grey, fontSize: 12, fontFamily: 'Roboto')),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
+            // Removed the user details section from here
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: ElevatedButton.icon(
@@ -1105,7 +1208,7 @@ class MessageBubble extends StatelessWidget {
                         fontFamily: 'Roboto',
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(height: 8),
                     Text(
                       _formatTime(timestamp),
                       style: const TextStyle(
