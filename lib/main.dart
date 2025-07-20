@@ -13,7 +13,10 @@ import 'package:path/path.dart' as path;
 import 'package:dio/dio.dart';
 import 'package:mime/mime.dart';
 import 'package:http_parser/http_parser.dart';
-
+import 'package:firebase_core/firebase_core.dart'; // Import Firebase Core
+import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
+import 'package:flutter_application_1/login_screen.dart'; // Import LoginScreen
+import 'package:flutter_application_1/registration_screen.dart'; // Import RegistrationScreen
 
 // --- THEME AND STYLING ---
 const Color kEiraYellow = Color(0xFFFDB821);
@@ -29,19 +32,18 @@ const double kSidebarWidth = 280.0;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+  await Firebase.initializeApp(); // Initialize Firebase
+
   // Force English locale
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
-  
+
   runApp(const EiraApp());
 }
 
 class EiraApp extends StatelessWidget {
   const EiraApp({super.key});
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +71,18 @@ class EiraApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const HomeScreen(),
+      home: StreamBuilder<User?>( // Listen to authentication state changes
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasData) {
+            return const HomeScreen(); // User is logged in
+          }
+          return const LoginScreen(); // User is not logged in
+        },
+      ),
     );
   }
 }
@@ -80,7 +93,6 @@ class ChatMessage {
   final bool isUser;
   final List<File>? attachments;
   final DateTime timestamp;
-
   ChatMessage({
     required this.text,
     required this.isUser,
@@ -99,10 +111,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _hasActiveChat = false;
-  
+
   // Chat messages
   final List<ChatMessage> _messages = [];
-  
+
   // Audio recording
   late stt.SpeechToText _speech;
   bool _isListening = false;
@@ -110,14 +122,14 @@ class _HomeScreenState extends State<HomeScreen> {
   FlutterSoundRecorder? _audioRecorder;
   bool _isRecordingAudio = false;
   String? _audioPath;
-  
+
   // Video recording
   CameraController? _cameraController;
   Future<void>? _initializeCameraFuture;
   bool _isRecordingVideo = false;
   String? _videoPath;
   bool _isCameraInitialized = false;
-  
+
   // File handling - these will be displayed above input and sent only when user presses send
   final List<File> _pendingFiles = [];
   final ImagePicker _picker = ImagePicker();
@@ -162,10 +174,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _initializeCamera() async {
     try {
       final cameras = await availableCameras();
-      
+
       CameraDescription? frontCamera;
       CameraDescription? backCamera; // Keep track of back camera for fallback
-
       for (var camera in cameras) {
         if (camera.lensDirection == CameraLensDirection.front) {
           frontCamera = camera;
@@ -173,17 +184,15 @@ class _HomeScreenState extends State<HomeScreen> {
           backCamera = camera;
         }
       }
-
       // Prefer front camera, then back camera, then any available camera
       CameraDescription? selectedCamera = frontCamera ?? backCamera;
       selectedCamera ??= cameras.isNotEmpty ? cameras.first : null;
-
       if (selectedCamera != null) {
         _cameraController = CameraController(
           selectedCamera,
           ResolutionPreset.medium,
         );
-        
+
         _initializeCameraFuture = _cameraController!.initialize().then((_) {
           if (mounted) {
             setState(() {
@@ -220,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Permission.camera,
         Permission.storage,
       ].request();
-      
+
       statuses.forEach((permission, status) {
         if (status != PermissionStatus.granted) {
           print('$permission permission denied');
@@ -234,36 +243,33 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startAudioRecording() async {
     try {
       await _requestPermissions();
-      
+
       final status = await Permission.microphone.status;
       if (status != PermissionStatus.granted) {
         _showPermissionDeniedDialog('Microphone');
         return;
       }
-
       if (_audioRecorder == null) {
         await _initAudioRecorder();
       }
-
       if (_audioRecorder != null) {
         final tempDir = await getTemporaryDirectory();
-        
+
         // Use .wav extension for the filename
         final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
-        final filePath = '${tempDir.path}/$fileName'; 
-        
+        final filePath = '${tempDir.path}/$fileName';
+
         // Use the pcm16WAV codec to record a WAV file
         await _audioRecorder!.startRecorder(
           toFile: filePath,
           codec: Codec.pcm16WAV,
         );
-        
+
         setState(() {
           _isRecordingAudio = true;
           _audioPath = filePath;
           _recognizedText = '';
         });
-
         // Start speech recognition
         if (_speech.isAvailable) {
           await _speech.listen(
@@ -277,7 +283,6 @@ class _HomeScreenState extends State<HomeScreen> {
             pauseFor: const Duration(seconds: 3),
           );
         }
-
         _showSnackBar('Recording started...', Colors.green);
       }
     } catch (e) {
@@ -291,20 +296,20 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_speech.isListening) {
         await _speech.stop();
       }
-      
+
       if (_audioRecorder != null && _isRecordingAudio) {
         String? recordedPath = await _audioRecorder!.stopRecorder();
-        
+
         setState(() {
           _isRecordingAudio = false;
         });
-        
+
         if (recordedPath != null && File(recordedPath).existsSync()) {
           final file = File(recordedPath);
           setState(() {
             _pendingFiles.add(file);
           });
-          
+
           _showSnackBar('Audio recorded! Press send to share.', Colors.green);
         }
       }
@@ -317,29 +322,26 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startVideoRecording() async {
     try {
       await _requestPermissions();
-      
+
       final status = await Permission.camera.status;
       if (status != PermissionStatus.granted) {
         _showPermissionDeniedDialog('Camera');
         return;
       }
-
       if (_cameraController == null || !_isCameraInitialized) {
         await _initializeCamera();
         if (_initializeCameraFuture != null) {
           await _initializeCameraFuture!;
         }
       }
-
       if (_cameraController != null && _cameraController!.value.isInitialized) {
         await _cameraController!.startVideoRecording();
-        
+
         setState(() {
           _isRecordingVideo = true;
         });
-        
-        _showSnackBar('Video recording started...', Colors.green);
 
+        _showSnackBar('Video recording started...', Colors.green);
         // Show the video recording preview dialog
         showDialog(
           context: context,
@@ -361,7 +363,6 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         );
-
       } else {
         _showErrorDialog('Camera not initialized');
       }
@@ -371,35 +372,29 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // --- MODIFIED FUNCTION WITH FILE RENAME LOGIC ---
   Future<void> _stopVideoRecording() async {
     try {
       if (_cameraController != null && _isRecordingVideo) {
         final XFile tempFile = await _cameraController!.stopVideoRecording();
-        
+
         setState(() {
           _isRecordingVideo = false;
         });
-
         final File originalFile = File(tempFile.path);
-        
-        // Define a new path with the correct .mp4 extension
+
         final Directory directory = await getTemporaryDirectory();
         final String newPath = path.join(
           directory.path,
           'video_${DateTime.now().millisecondsSinceEpoch}.mp4',
         );
-
-        // Rename the temp file to the new path
         final File newFile = await originalFile.rename(newPath);
-
         print('✅ Video file renamed to: ${newFile.path}');
-        
+
         if (newFile.existsSync()) {
           setState(() {
-            _pendingFiles.add(newFile); // Add the correctly named file
+            _pendingFiles.add(newFile);
           });
-          
+
           _showSnackBar('Video recorded! Press send to share.', Colors.green);
         } else {
           print('❌ Error: Renamed file does not exist at ${newFile.path}');
@@ -412,7 +407,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-
   Future<void> _pickFiles() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -420,19 +414,19 @@ class _HomeScreenState extends State<HomeScreen> {
         allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'aac', 'wav', 'mov'],
         allowMultiple: true,
       );
-      
+
       if (result != null) {
         List<File> files = result.paths
             .where((path) => path != null)
             .map((path) => File(path!))
             .where((file) => file.existsSync())
             .toList();
-        
+
         if (files.isNotEmpty) {
           setState(() {
             _pendingFiles.addAll(files);
           });
-          
+
           _showSnackBar('${files.length} file(s) added. Press send to share.', Colors.green);
         }
       }
@@ -449,7 +443,7 @@ class _HomeScreenState extends State<HomeScreen> {
         isUser: isUser,
         attachments: attachments,
       ));
-      
+
       // Start new chat if not already active
       if (!_hasActiveChat) {
         _hasActiveChat = true;
@@ -475,8 +469,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleVideoRecording() async {
     print('Toggle video recording called - isRecording: $_isRecordingVideo');
     if (_isRecordingVideo) {
-      // If already recording, this means the dialog is open and user wants to stop from outside
-      // This case should ideally be handled by the dialog's stop button, but for robustness:
       await _stopVideoRecording();
     } else {
       await _startVideoRecording();
@@ -485,24 +477,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _sendMessage() {
     print('Send message called - text: ${_textController.text.trim()}, files: ${_pendingFiles.length}');
-    
+
     if (_textController.text.trim().isNotEmpty || _pendingFiles.isNotEmpty) {
       String messageText = _textController.text.trim();
       List<File> attachments = List.from(_pendingFiles);
-      
+
       _addMessage(
-        messageText.isEmpty ? "Files shared" : messageText, 
-        true, 
-        attachments.isNotEmpty ? attachments : null
-      );
-      
+          messageText.isEmpty ? "Files shared" : messageText,
+          true,
+          attachments.isNotEmpty ? attachments : null);
+
       setState(() {
         _textController.clear();
-        _pendingFiles.clear(); // Clear pending files after sending
+        _pendingFiles.clear();
         _recognizedText = '';
       });
-      
-      // Simulate AI response
+
       Future.delayed(const Duration(seconds: 1), () {
         _addMessage("Thank you for your message. How can I help you with your health concerns?", false);
       });
@@ -619,7 +609,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Padding(
             padding: EdgeInsets.only(
-              bottom: _pendingFiles.isNotEmpty ? 140.0 : 100.0, // Adjusted padding for new chip size
+              bottom: _pendingFiles.isNotEmpty ? 140.0 : 100.0,
             ),
             child: _hasActiveChat
                 ? MessagesListView(messages: _messages)
@@ -632,13 +622,11 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Pending files display
                 if (_pendingFiles.isNotEmpty)
                   PendingFilesDisplay(
                     files: _pendingFiles,
                     onRemove: _removePendingFile,
                   ),
-                // Chat input area
                 ChatInputArea(
                   isRecordingAudio: _isRecordingAudio,
                   isRecordingVideo: _isRecordingVideo,
@@ -662,32 +650,30 @@ class _HomeScreenState extends State<HomeScreen> {
 class PendingFilesDisplay extends StatelessWidget {
   final List<File> files;
   final Function(int) onRemove;
-
   const PendingFilesDisplay({
     super.key,
     required this.files,
     required this.onRemove,
   });
-
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0), // Adjusted padding
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
       decoration: BoxDecoration(
         color: kEiraBackground,
         border: Border(
           top: BorderSide(color: kEiraBorder.withOpacity(0.3)),
         ),
       ),
-      child: SingleChildScrollView( // Use SingleChildScrollView for horizontal chips
+      child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: files.asMap().entries.map((entry) {
             int index = entry.key;
             File file = entry.value;
             return Padding(
-              padding: const EdgeInsets.only(right: 8.0), // Spacing between chips
+              padding: const EdgeInsets.only(right: 8.0),
               child: PendingFileChip(
                 file: file,
                 onRemove: () => onRemove(index),
@@ -703,18 +689,15 @@ class PendingFilesDisplay extends StatelessWidget {
 class PendingFileChip extends StatelessWidget {
   final File file;
   final VoidCallback onRemove;
-
   const PendingFileChip({
     super.key,
     required this.file,
     required this.onRemove,
   });
-
   @override
   Widget build(BuildContext context) {
-    final displayName = path.basename(file.path); 
+    final displayName = path.basename(file.path);
     final displayIcon = _getFileIcon(file.path);
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -757,7 +740,6 @@ class PendingFileChip extends StatelessWidget {
     );
   }
 
-  // This function now works correctly because the file extension is guaranteed to be .mp4
   IconData _getFileIcon(String path) {
     final extension = path.split('.').last.toLowerCase();
     if (['pdf'].contains(extension)) return Icons.insert_drive_file;
@@ -768,11 +750,9 @@ class PendingFileChip extends StatelessWidget {
   }
 }
 
-
 class AppDrawer extends StatelessWidget {
   final VoidCallback onNewSession;
   const AppDrawer({super.key, required this.onNewSession});
-
   @override
   Widget build(BuildContext context) {
     return Drawer(
@@ -800,7 +780,7 @@ class AppDrawer extends StatelessWidget {
                 ],
               ),
             ),
-            
+
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: ElevatedButton.icon(
@@ -817,9 +797,9 @@ class AppDrawer extends StatelessWidget {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Align(
@@ -827,9 +807,9 @@ class AppDrawer extends StatelessWidget {
                 child: Text("Recent Sessions", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Roboto')),
               ),
             ),
-            
+
             const SizedBox(height: 10),
-            
+
             ListTile(
               title: const Text("test2", style: TextStyle(fontSize: 14, fontFamily: 'Roboto')),
               subtitle: const Text("4 days ago", style: TextStyle(fontSize: 12, fontFamily: 'Roboto')),
@@ -844,15 +824,22 @@ class AppDrawer extends StatelessWidget {
                 print('Recent session tapped: test');
               },
             ),
-            
+
             const Spacer(),
-            
+
             const Divider(color: kEiraBorder),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
               title: const Text("Logout", style: TextStyle(color: Colors.red, fontFamily: 'Roboto')),
-              onTap: () {
+              onTap: () async {
                 print('Logout tapped');
+                await FirebaseAuth.instance.signOut(); // Sign out the user
+                if (context.mounted) {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    (Route<dynamic> route) => false,
+                  );
+                }
               },
             ),
           ],
@@ -862,26 +849,29 @@ class AppDrawer extends StatelessWidget {
   }
 }
 
+// --- MODIFIED WIDGET WITH REDUCED SPACING ---
 class WelcomeView extends StatelessWidget {
   final VoidCallback onCapabilityTap;
   const WelcomeView({super.key, required this.onCapabilityTap});
-
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 40.0),
+      // Reduced vertical padding
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
       child: Column(
         children: [
-          const SizedBox(height: 60),
-          
+          // Reduced top spacing
+          const SizedBox(height: 20),
+
           Image.asset(
-            'assets/images/Eira.png', 
-            width: 250, 
-            height: 250, 
+            'assets/images/Eira.png',
+            width: 250,
+            height: 250,
           ),
-          
-          const SizedBox(height: 24), 
-          
+
+          // Reduced spacing between logo and subtitle
+          const SizedBox(height: 16),
+
           const Text(
             "Eira - Your AI Health Assistant",
             style: TextStyle(
@@ -891,53 +881,55 @@ class WelcomeView extends StatelessWidget {
               fontFamily: 'Roboto',
             ),
           ),
-          
-          const SizedBox(height: 60),
-          
+
+          // Reduced spacing between subtitle and grid
+          const SizedBox(height: 30),
+
           GridView.builder(
-            shrinkWrap: true, 
-            physics: const NeverScrollableScrollPhysics(), 
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2, 
-              crossAxisSpacing: 16.0, 
-              mainAxisSpacing: 16.0, 
-              childAspectRatio: 0.8, 
+              crossAxisCount: 2,
+              // Reduced spacing between cards
+              crossAxisSpacing: 12.0,
+              mainAxisSpacing: 12.0,
+              childAspectRatio: 0.8,
             ),
-            itemCount: 4, 
+            itemCount: 4,
             itemBuilder: (context, index) {
               List<Map<String, dynamic>> cardsData = [
-   {
-    'icon': Icons.medical_information, 
-    'title': 'Medical Assistance',
-    'description': 'Get reliable medical information and health guidance',
-    'color': const Color(0xFF8A5FFC), 
-  },
-  {
-    'icon': Icons.medication, 
-    'title': 'Medication Info',
-    'description': 'Learn about medications, dosages, and interactions',
-    'color': const Color(0xFFF97316),
-  },
-  {
-    'icon': Icons.biotech, 
-    'title': 'Health Analysis',
-    'description': 'Understand symptoms and get preliminary health insights',
-    'color': const Color(0xFF3B82F6),
-  },
-  {
-    'icon': Icons.favorite, 
-    'title': 'Wellness Tips',
-    'description': 'Receive personalized wellness and lifestyle recommendations',
-    'color': const Color(0xFFEC4899),
-  },
-];
-              
+                {
+                  'icon': Icons.medical_information,
+                  'title': 'Medical Assistance',
+                  'description': 'Get reliable medical information and health guidance',
+                  'color': const Color(0xFF8A5FFC),
+                },
+                {
+                  'icon': Icons.medication,
+                  'title': 'Medication Info',
+                  'description': 'Learn about medications, dosages, and interactions',
+                  'color': const Color(0xFFF97316),
+                },
+                {
+                  'icon': Icons.biotech,
+                  'title': 'Health Analysis',
+                  'description': 'Understand symptoms and get preliminary health insights',
+                  'color': const Color(0xFF3B82F6),
+                },
+                {
+                  'icon': Icons.favorite,
+                  'title': 'Wellness Tips',
+                  'description': 'Receive personalized wellness and lifestyle recommendations',
+                  'color': const Color(0xFFEC4899),
+                },
+              ];
+
               final card = cardsData[index];
               return CapabilityCard(
                 icon: card['icon'],
                 title: card['title'],
                 description: card['description'],
-                color: card['color'], 
+                color: card['color'],
                 onTap: () {
                   print('${card['title']} card tapped');
                   onCapabilityTap();
@@ -945,8 +937,9 @@ class WelcomeView extends StatelessWidget {
               );
             },
           ),
-          
-          const SizedBox(height: 40),
+
+          // Reduced bottom spacing
+          const SizedBox(height: 20),
         ],
       ),
     );
@@ -957,25 +950,23 @@ class CapabilityCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String description;
-  final Color color; 
+  final Color color;
   final VoidCallback onTap;
-
   const CapabilityCard({
     super.key,
     required this.icon,
     required this.title,
     required this.description,
-    required this.color, 
+    required this.color,
     required this.onTap,
   });
-
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.all(16), 
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: kEiraBackground,
           border: Border.all(color: kEiraBorder.withOpacity(0.3)),
@@ -988,29 +979,29 @@ class CapabilityCard extends StatelessWidget {
             ),
           ],
         ),
-        child: Column( 
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1), 
+                color: color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 icon,
-                color: color, 
+                color: color,
                 size: 24,
               ),
             ),
-            const SizedBox(height: 10), 
+            const SizedBox(height: 10),
             Text(
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 15, 
+                fontSize: 15,
                 color: kEiraText,
                 fontFamily: 'Roboto',
               ),
@@ -1020,13 +1011,13 @@ class CapabilityCard extends StatelessWidget {
               description,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 13, 
+                fontSize: 13,
                 color: kEiraTextSecondary,
                 height: 1.3,
                 fontFamily: 'Roboto',
               ),
-              maxLines: 3, 
-              overflow: TextOverflow.ellipsis, 
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -1037,9 +1028,8 @@ class CapabilityCard extends StatelessWidget {
 
 class MessagesListView extends StatelessWidget {
   final List<ChatMessage> messages;
-  
-  const MessagesListView({super.key, required this.messages});
 
+  const MessagesListView({super.key, required this.messages});
   @override
   Widget build(BuildContext context) {
     if (messages.isEmpty) {
@@ -1054,7 +1044,6 @@ class MessagesListView extends StatelessWidget {
         ),
       );
     }
-
     return ListView.builder(
       padding: const EdgeInsets.all(16.0),
       itemCount: messages.length,
@@ -1063,7 +1052,7 @@ class MessagesListView extends StatelessWidget {
         return MessageBubble(
           isUser: message.isUser,
           text: message.text,
-          attachments: message.attachments, 
+          attachments: message.attachments,
           timestamp: message.timestamp,
         );
       },
@@ -1076,15 +1065,13 @@ class MessageBubble extends StatelessWidget {
   final String text;
   final List<File>? attachments;
   final DateTime timestamp;
-
   const MessageBubble({
-    super.key, 
-    required this.isUser, 
-    required this.text, 
+    super.key,
+    required this.isUser,
+    required this.text,
     this.attachments,
     required this.timestamp,
   });
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1113,7 +1100,7 @@ class MessageBubble extends StatelessWidget {
                     Text(
                       isUser ? "You" : "Eira 0.1",
                       style: TextStyle(
-                        fontWeight: FontWeight.bold, 
+                        fontWeight: FontWeight.bold,
                         color: isUser ? kEiraText : kEiraYellowHover,
                         fontFamily: 'Roboto',
                       ),
@@ -1152,12 +1139,11 @@ class MessageBubble extends StatelessWidget {
 class AttachmentChip extends StatelessWidget {
   final File file;
   const AttachmentChip({super.key, required this.file});
-
   @override
   Widget build(BuildContext context) {
     final fileName = path.basename(file.path);
     final fileSize = _formatFileSize(file.lengthSync());
-    
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: InkWell(
@@ -1180,7 +1166,7 @@ class AttachmentChip extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      fileName, 
+                      fileName,
                       style: const TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Roboto'),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1227,14 +1213,12 @@ class AttachmentChip extends StatelessWidget {
 
 class TypingIndicator extends StatefulWidget {
   const TypingIndicator({super.key});
-
   @override
   State<TypingIndicator> createState() => _TypingIndicatorState();
 }
 
 class _TypingIndicatorState extends State<TypingIndicator> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-
   @override
   void initState() {
     super.initState();
@@ -1291,7 +1275,6 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback onCameraOpen;
   final VoidCallback onSendMessage;
   final bool hasPendingFiles;
-
   const ChatInputArea({
     super.key,
     required this.isRecordingAudio,
@@ -1304,7 +1287,6 @@ class ChatInputArea extends StatefulWidget {
     required this.onSendMessage,
     required this.hasPendingFiles,
   });
-
   @override
   State<ChatInputArea> createState() => _ChatInputAreaState();
 }
@@ -1329,7 +1311,6 @@ class _ChatInputAreaState extends State<ChatInputArea> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Input field
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -1382,10 +1363,9 @@ class _ChatInputAreaState extends State<ChatInputArea> {
               ],
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
-          // Action buttons
+
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1434,9 +1414,9 @@ class _ChatInputAreaState extends State<ChatInputArea> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              icon, 
-              size: 20, 
-              color: isActive ? kEiraYellow : kEiraText
+              icon,
+              size: 20,
+              color: isActive ? kEiraYellow : kEiraText,
             ),
             const SizedBox(width: 8),
             Text(
@@ -1459,14 +1439,12 @@ class VideoRecordingPreview extends StatelessWidget {
   final CameraController cameraController;
   final VoidCallback onStopRecording;
   final VoidCallback onClose;
-
   const VideoRecordingPreview({
     super.key,
     required this.cameraController,
     required this.onStopRecording,
     required this.onClose,
   });
-
   @override
   Widget build(BuildContext context) {
     if (!cameraController.value.isInitialized) {
@@ -1484,8 +1462,8 @@ class VideoRecordingPreview extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: SizedBox(
-                width: 240, // Fixed width for the preview
-                height: 320, // Fixed height for the preview
+                width: 240,
+                height: 320,
                 child: CameraPreview(cameraController),
               ),
             ),
