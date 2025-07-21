@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class ApiService {
   // This baseUrl remains the same.
-  static const String baseUrl = 'https://eirabackend-4brjlheqx-mohammadoweisis23-6585s-projects.vercel.app';
+  static const String baseUrl = 'https://eirabackend-cagcooa82-mohammadoweisis23-6585s-projects.vercel.app';
 
   static Future<String?> _getAuthToken() async {
     final user = FirebaseAuth.instance.currentUser;
