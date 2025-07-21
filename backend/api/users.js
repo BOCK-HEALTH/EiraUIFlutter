@@ -1,21 +1,22 @@
 // backend/api/users.js
-const admin = require('../lib/firebase-admin');
+const { verifyToken } = require('../lib/firebase-admin'); // Import the new verifyToken function
 const db = require('../lib/db');
 
 module.exports = async (req, res) => {
   try {
+    // Standardize authentication at the beginning
     const idToken = req.headers.authorization?.split('Bearer ')[1];
     if (!idToken) return res.status(401).json({ error: 'Unauthorized' });
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const decodedToken = await verifyToken(idToken); // Use the helper
     const { email, name: firebaseName } = decodedToken;
 
     switch (req.method) {
-      case 'GET': // Get user info
+      case 'GET':
         const { rows } = await db.query('SELECT email, name FROM users WHERE email = $1', [email]);
         if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
         return res.status(200).json(rows[0]);
 
-      case 'POST': // Get or Create user
+      case 'POST':
         const displayName = req.body.name || firebaseName || 'New User';
         let userResult = await db.query('SELECT email, name FROM users WHERE email = $1', [email]);
         if (userResult.rows.length === 0) {
@@ -29,7 +30,7 @@ module.exports = async (req, res) => {
         return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
   } catch (error) {
-    console.error('User API Error:', error);
+    console.error('Users API Error:', error.message);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 };
