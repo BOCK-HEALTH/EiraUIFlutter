@@ -1,72 +1,50 @@
-const { verifyToken } = require("../lib/firebase-admin")
-const { getPool } = require("../lib/db")
+// backend/api/sessions.js
+const admin = require('../lib/firebase-admin');
+const db = require('../lib/db');
 
 module.exports = async (req, res) => {
-  const pool = getPool()
-  const url = req.url.replace("/api/sessions", "").replace("/sessions", "")
-
   try {
-    // Verify authentication
-    const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Authorization token required" })
+    const idToken = req.headers.authorization?.split('Bearer ')[1];
+    if (!idToken) return res.status(401).json({ error: 'Unauthorized' });
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const { email } = decodedToken;
+
+    switch (req.method) {
+      case 'GET': // List all sessions
+        const { rows } = await db.query('SELECT id, title, created_at FROM chat_sessions WHERE user_email = $1 ORDER BY created_at DESC', [email]);
+        return res.status(200).json(rows);
+
+      case 'POST': // Create a new session
+        const { title } = req.body;
+        if (!title) return res.status(400).json({ error: 'Title is required' });
+        const insertResult = await db.query('INSERT INTO chat_sessions (user_email, title) VALUES ($1, $2) RETURNING id, title, created_at', [email, title]);
+        return res.status(200).json(insertResult.rows[0]);
+
+      case 'PUT': // Rename a session
+        const { sessionId, newTitle } = req.body;
+        if (!sessionId || !newTitle) return res.status(400).json({ error: 'sessionId and newTitle are required' });
+        const updateResult = await db.query('UPDATE chat_sessions SET title = $1 WHERE id = $2 AND user_email = $3', [newTitle, sessionId, email]);
+        if (updateResult.rowCount === 0) return res.status(404).json({ error: 'Session not found or not owned by user' });
+        return res.status(200).json({ status: 'success' });
+
+      case 'DELETE': // Delete a session
+        const { sessionId: idToDelete } = req.query; // sessionId from query param
+        if (!idToDelete) return res.status(400).json({ error: 'sessionId query parameter is required for deletion' });
+        
+        // Ensure user owns the session before deleting
+        const ownerCheck = await db.query('SELECT id FROM chat_sessions WHERE id = $1 AND user_email = $2', [idToDelete, email]);
+        if (ownerCheck.rowCount === 0) return res.status(403).json({ error: 'Forbidden' });
+
+        await db.query('DELETE FROM chat_history WHERE session_id = $1', [idToDelete]);
+        await db.query('DELETE FROM chat_sessions WHERE id = $1', [idToDelete]);
+        return res.status(200).json({ status: 'success' });
+
+      default:
+        res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
+        return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
-
-    const idToken = authHeader.split("Bearer ")[1]
-    const decodedToken = await verifyToken(idToken)
-
-    if (url === "/create" && req.method === "POST") {
-      const { title } = req.body
-
-      const result = await pool.query(`INSERT INTO chat_sessions (user_email, title) VALUES ($1, $2) RETURNING *`, [
-        decodedToken.email,
-        title || "Untitled Session",
-      ])
-
-      return res.json(result.rows[0])
-    }
-
-    if (url === "/list" && req.method === "GET") {
-      const result = await pool.query(
-        `SELECT id, title, created_at FROM chat_sessions 
-         WHERE user_email = $1 ORDER BY created_at DESC`,
-        [decodedToken.email],
-      )
-
-      return res.json(result.rows)
-    }
-
-    if (url === "/rename" && req.method === "PUT") {
-      const { sessionId, newTitle } = req.body
-
-      if (!sessionId || !newTitle) {
-        return res.status(400).json({ error: "sessionId and newTitle are required" })
-      }
-
-      await pool.query(`UPDATE chat_sessions SET title = $1 WHERE id = $2 AND user_email = $3`, [
-        newTitle,
-        sessionId,
-        decodedToken.email,
-      ])
-
-      return res.json({ success: true })
-    }
-
-    if (url.startsWith("/") && req.method === "DELETE") {
-      const sessionId = url.substring(1) // Remove leading slash
-
-      if (!sessionId) {
-        return res.status(400).json({ error: "Session ID is required" })
-      }
-
-      await pool.query(`DELETE FROM chat_sessions WHERE id = $1 AND user_email = $2`, [sessionId, decodedToken.email])
-
-      return res.json({ success: true })
-    }
-
-    return res.status(404).json({ error: "Sessions route not found" })
   } catch (error) {
-    console.error("Sessions error:", error)
-    return res.status(500).json({ error: error.message || "Sessions operation failed" })
+    console.error('Sessions API Error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
-}
+};

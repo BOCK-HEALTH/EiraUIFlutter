@@ -15,11 +15,5 @@
       "src": "/(.*)",
       "dest": "/api/$1"
     }
-  ],
-  "env": {
-    "DATABASE_URL": "postgresql://neondb_owner:npg_DkvpZsg8Qd3A@ep-rapid-frog-a4vxq5u3-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require",
-    "FIREBASE_PROJECT_ID": "flutterapplication1-abdad",
-    "FIREBASE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDEXGrVwQae2uQA\nAxJADfYVE6+IBDfJdCTQO7UTYBfzIfbERT7d+rvNRGpLxsHSG6lnEKzPhJam/08P\nEWKisVpPs6XMvu6HidbWBGHtsvElOqiepOHXoWMOqShxNJDwmiuSqu2eQ1l03jD7\nrrvTrr4sJI7wEcjSgln2QTwBZtrFGL4NBFHMLAW+b3abDcrE3gBPShyD7wLaqgVT\nvCf6KnNsTV9UfmHElcgygHEG3luKqLlZa+yuSqakaWjsYH/ltfYCEGJVQdnYdAiD\nPwIOjwTOso8ps8H73EtIMtml7ywKuwu1+cCsM4oWRiJGWi4zQZCCaQSwkq9+l6eM\nix5BFWuBAgMBAAECggEACjbIc9/7iS3XqEyAmYZgY45HliqqADejZpWEgMKB3GrK\n3EDB2Wgedrn1UYXANT6tHChY5N5/u6YSJbWAzPeuu/CbUkAoRjKcUzudIHErbAVW\nGhJ3kPDbJzsTWHgkhe9vDs0HWTElqReZsq3PJV60k7U/Hiu+p3ySU2XnSidgf9oH\nOj4EleHKyrOTw6ReMbu5UAtW+txuT/sOGSQFDILNmR4om3SVhrjmEqVlU8emvpLj\nC6iON6cyJz8+7N1jPNgi3zJhdikvWlA2piP/RcM7oQ0Nsf/8N6oSej63mZx/449V\nP0z6DBanyu2bKuErO53DBs0iwmPTpOyv/UacEEtVRQKBgQDy9n3fWTTlzYpsKQgA\nKT1hXscmQfGqJfjyta9Q1QbRpauGkH2/LvABAY37iqiLTap24NTlp9+8ct1XK/Xv\nbf3F6rus71EaO+3EC0Hgq/sdATUK2oCUYZ8U2B8OScNr2mlrJHxx6xqcROAwNF4N\n4aOhfc9NsXX4yy1nr5rn1/SADwKBgQDO5cUW6larqAZF54lyI1SyLmqN3DRg3D1F\nERZdAA2e7Z/9cO7Dh0W/HXZUDfjL8N/MrjzsIBG3UhvJ88IK7kRWSibGoSRgILmP\ndlz/Amry+Hf6lJyrtsDrUZLxQi4w+jvJ+S3n3mgp2bQwEAHTNkhaD8cHwndZ5tSX\nRtpVlRrLbwKBgQDmaAc6ddiKTX+Fzut9a55/5mepykOpfdU2JkIZv8t1qUyekgwN\n8C8+ZQEGmJn5cS/FCLYdDDRK/AsXjeLuqjpNJKvR9inNXSPAFITm0XGUMf7hShFB\npco89C+PVzhx4XCzYKh7R9+2bkLEtAS12VNZ5HthTHd59wQaHhgi4VNG1QKBgQCz\nSjm42emxZzHIchSRbDyBC+gadrCNH02ZBG20uc8T4ie6oJrHpfmy2/0madUoJdxK\nqtLwa/nuOqEKKMoGXuOpQyjHB+1VwAYNZCzCb33uf5K4+v+pbf1P7qi/mPIeTzpw\nlBZL0FfDrHyRCc4LEgcwxGtdNg/nQDkJvsSFVWia0QKBgQDu0eO8+jwGx1g3gE7g\nzqoqe1IDh5HdH2jpAAFFzifSBcqZIx27pTvek+gqqCs00nMfRZm3U8wQgnlhTvbr\n746ZOn4Wospw4yJUSfeVF2uiSfaZlqMaEcHEGRkVKYBLp1XNjkmPWTXx4rIHk/Wi\nuzp65CCH4hHbR5xB77ya0VY7kw==\n-----END PRIVATE KEY-----\n",
-    "FIREBASE_CLIENT_EMAIL": "firebase-adminsdk-fbsvc@flutterapplication1-abdad.iam.gserviceaccount.com"
-  }
+  ]
 }

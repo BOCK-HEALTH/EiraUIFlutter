@@ -1,57 +1,39 @@
-const { verifyToken } = require("../lib/firebase-admin")
-const { getPool } = require("../lib/db")
+// backend/api/chat.js
+const admin = require('../lib/firebase-admin');
+const db = require('../lib/db');
 
 module.exports = async (req, res) => {
-  const pool = getPool()
-  const url = req.url.replace("/api/chat", "").replace("/chat", "")
-
   try {
-    // Verify authentication
-    const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Authorization token required" })
+    const idToken = req.headers.authorization?.split('Bearer ')[1];
+    if (!idToken) return res.status(401).json({ error: 'Unauthorized' });
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const { email } = decodedToken;
+
+    switch (req.method) {
+      case 'GET': // Get chat history for a session
+        const { session_id } = req.query;
+        if (!session_id) return res.status(400).json({ error: 'session_id is required' });
+
+        const historyQuery = `
+          SELECT h.* FROM chat_history h JOIN chat_sessions s ON h.session_id = s.id
+          WHERE h.session_id = $1 AND s.user_email = $2 ORDER BY h.created_at ASC`;
+        const { rows } = await db.query(historyQuery, [session_id, email]);
+        return res.status(200).json(rows);
+
+      case 'POST': // Add a new message
+        const { session_id: newMsgSessionId, message, sender } = req.body;
+        if (!newMsgSessionId || !message || !sender) return res.status(400).json({ error: 'session_id, message, and sender are required' });
+        
+        const addMsgQuery = 'INSERT INTO chat_history (session_id, user_email, sender, message) VALUES ($1, $2, $3, $4)';
+        await db.query(addMsgQuery, [newMsgSessionId, email, sender, message]);
+        return res.status(200).json({ status: 'success' });
+
+      default:
+        res.setHeader('Allow', ['GET', 'POST']);
+        return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
-
-    const idToken = authHeader.split("Bearer ")[1]
-    const decodedToken = await verifyToken(idToken)
-
-    if (url === "/add" && req.method === "POST") {
-      const { session_id, message, sender } = req.body
-
-      if (!session_id || !message || !sender) {
-        return res.status(400).json({ error: "session_id, message, and sender are required" })
-      }
-
-      await pool.query(
-        `INSERT INTO chat_history (user_email, session_id, message, sender)
-         VALUES ($1, $2, $3, $4)`,
-        [decodedToken.email, session_id, message, sender],
-      )
-
-      return res.json({ success: true })
-    }
-
-    if (url === "/history" && req.method === "GET") {
-      const { session_id } = req.query
-
-      if (!session_id) {
-        return res.status(400).json({ error: "session_id is required" })
-      }
-
-      const result = await pool.query(
-        `SELECT message, sender, created_at
-         FROM chat_history
-         WHERE session_id = $1 AND user_email = $2
-         ORDER BY created_at ASC`,
-        [session_id, decodedToken.email],
-      )
-
-      return res.json(result.rows)
-    }
-
-    return res.status(404).json({ error: "Chat route not found" })
   } catch (error) {
-    console.error("Chat error:", error)
-    return res.status(500).json({ error: error.message || "Chat operation failed" })
+    console.error('Chat API Error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
-}
+};
