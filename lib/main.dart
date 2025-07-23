@@ -85,6 +85,9 @@ class EiraApp extends StatelessWidget {
   }
 }
 
+// In main.dart
+// <-- REPLACE your entire ChatMessage class with this corrected version -->
+
 class ChatMessage {
   final String text;
   final bool isUser;
@@ -102,14 +105,26 @@ class ChatMessage {
     this.fileType,
   }) : this.timestamp = timestamp ?? DateTime.now();
 
-  // NEW: Factory constructor to create a ChatMessage from JSON
+  // THIS IS THE CORRECTED CONSTRUCTOR
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    // Get the raw data, which might be a List or null
+    final fileUrlData = json['file_url'];
+    final fileTypeData = json['file_type'];
+
     return ChatMessage(
       text: json['message'] ?? '',
       isUser: json['sender'] == 'user',
       timestamp: DateTime.parse(json['created_at']),
-      fileUrl: json['file_url'],
-      fileType: json['file_type'],
+      
+      // Safely extract the first element if the data is a non-empty list.
+      // Otherwise, set it to null.
+      fileUrl: (fileUrlData is List && fileUrlData.isNotEmpty)
+          ? fileUrlData[0] as String?
+          : null,
+          
+      fileType: (fileTypeData is List && fileTypeData.isNotEmpty)
+          ? fileTypeData[0] as String?
+          : null,
     );
   }
 }
@@ -1484,6 +1499,7 @@ class MessageBubble extends StatelessWidget {
 }
 
 // NEW: Create a widget specifically for displaying remote attachments
+
 class RemoteAttachmentChip extends StatelessWidget {
   final String fileUrl;
   final String? fileType;
@@ -1500,16 +1516,48 @@ class RemoteAttachmentChip extends StatelessWidget {
     return Icons.insert_drive_file;
   }
 
+  // --- THIS IS THE NEW, SAFE FILENAME PARSER ---
+  String _getCleanFileName(String url) {
+    try {
+      // 1. Decode the URL to handle any special characters (like %20 for spaces)
+      final decodedUrl = Uri.decodeComponent(url);
+      
+      // 2. Find the last '/' to get the full filename part
+      final lastSlashIndex = decodedUrl.lastIndexOf('/');
+      if (lastSlashIndex == -1) {
+        // If there's no slash, return the whole decoded url as a fallback
+        return decodedUrl;
+      }
+      final fullFileName = decodedUrl.substring(lastSlashIndex + 1);
+
+      // 3. Find the first '_' to remove the timestamp prefix
+      final firstUnderscoreIndex = fullFileName.indexOf('_');
+      if (firstUnderscoreIndex == -1) {
+        // If there's no underscore (unexpected), return the full name as a fallback
+        return fullFileName;
+      }
+      
+      // 4. Return the part after the first underscore
+      return fullFileName.substring(firstUnderscoreIndex + 1);
+
+    } catch (e) {
+      // If any part of the parsing fails, return a safe fallback string
+      print("Error parsing filename: $e");
+      return "Attachment";
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final fileName = Uri.decodeComponent(fileUrl.split('/').last.split('?').first.substring(fileUrl.indexOf('_') + 1));
+    // Use the new, safe method to get the filename
+    final fileName = _getCleanFileName(fileUrl);
     final icon = _getIconForMimeType(fileType);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: InkWell(
         onTap: () {
-          // Here you would implement logic to open the URL, e.g., using url_launcher package
+          // You can use the url_launcher package here to open the fileUrl
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Opening file: $fileName')));
         },
         borderRadius: BorderRadius.circular(12),
@@ -1528,7 +1576,7 @@ class RemoteAttachmentChip extends StatelessWidget {
               Flexible(
                 child: Text(
                   fileName,
-                  style: const TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Roboto'),
+                  style: const TextStyle(fontWeight: FontWeight.w500),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
