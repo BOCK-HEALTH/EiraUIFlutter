@@ -15,7 +15,7 @@ dependencies:
   http: ^1.1.0
   # UI PACKAGES
   cupertino_icons: ^1.0.8
-  flutter_svg: ^2.0.10+1
+  flutter_svg: ^2.0.9
 
   # NATIVE FUNCTIONALITY PACKAGES
   file_picker: ^10.2.0

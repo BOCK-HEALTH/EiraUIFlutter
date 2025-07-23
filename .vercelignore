@@ -1,5 +1,0 @@
-# Ignore every file and folder by default
-*
-
-# But DO include the 'backend' folder and its contents
-!/backend

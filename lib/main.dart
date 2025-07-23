@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
-// CORRECTED IMPORT
 import 'package:file_picker/file_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:camera/camera.dart';
@@ -18,11 +17,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_application_1/login_screen.dart';
 import 'package:flutter_application_1/registration_screen.dart';
-import 'package:http/http.dart' as http;
-// CORRECT IMPORT for your real API service
-import 'package:flutter_application_1/services/api_service.dart';
+// <-- NEW: Import the API service you created
+import 'package:flutter_application_1/api_service.dart';
 
-// --- THEME AND STYLING ---
 const Color kEiraYellow = Color(0xFFFDB821);
 const Color kEiraYellowLight = Color(0xFFFFF8E6);
 const Color kEiraYellowHover = Color(0xFFE6A109);
@@ -34,15 +31,12 @@ const Color kEiraBorder = Color(0xFFE5E5E5);
 const Color kEiraUserBg = Color(0xFFF7F7F8);
 const double kSidebarWidth = 280.0;
 
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
-
   runApp(const EiraApp());
 }
 
@@ -96,11 +90,17 @@ class ChatMessage {
   final bool isUser;
   final List<File>? attachments;
   final DateTime timestamp;
+  // NEW: Add fields from the updated ChatMessage model
+  final String? fileUrl;
+  final String? fileType;
   ChatMessage({
     required this.text,
     required this.isUser,
     this.attachments,
     DateTime? timestamp,
+    // NEW: Add to constructor
+    this.fileUrl,
+    this.fileType,
   }) : timestamp = timestamp ?? DateTime.now();
 }
 
@@ -114,9 +114,16 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _hasActiveChat = false;
-
   final List<ChatMessage> _messages = [];
 
+  // <-- NEW: State variable for current model
+  String _currentModel = 'Eira 0.1';
+  final List<String> _availableModels = ['Eira 0.1', 'Eira 0.2', 'Eira 1'];
+  // <-- NEW: State variables for API communication
+  final ApiService _apiService = ApiService();
+  bool _isLoadingHistory = false;
+
+  // Audio recording
   late stt.SpeechToText _speech;
   bool _isListening = false;
   String _recognizedText = '';
@@ -124,6 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isRecordingAudio = false;
   String? _audioPath;
 
+  // Video recording
   CameraController? _cameraController;
   Future<void>? _initializeCameraFuture;
   bool _isRecordingVideo = false;
@@ -135,9 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final Dio _dio = Dio();
   final TextEditingController _textController = TextEditingController();
 
-  int? _currentSessionId;
-  bool _isLoadingSession = false;
-
+  // <-- MODIFIED: initState now calls _loadChatHistory
   @override
   void initState() {
     super.initState();
@@ -145,6 +151,39 @@ class _HomeScreenState extends State<HomeScreen> {
     _initializeSpeech();
     _initAudioRecorder();
     _initializeCamera();
+    _loadChatHistory(); // Load previous chats when the screen starts
+  }
+
+  // <-- NEW: Method to handle model selection
+  void _onModelChanged(String? newModel) {
+    if (newModel != null && newModel != _currentModel) {
+      setState(() {
+        _currentModel = newModel;
+      });
+      // You can add logic here to notify the backend about model change
+      _showSnackBar('Switched to $newModel', kEiraYellow);
+    }
+  }
+
+  // <-- NEW: Method to fetch all chat history from the backend
+  Future<void> _loadChatHistory() async {
+    setState(() {
+      _isLoadingHistory = true;
+    });
+    try {
+      final history = await _apiService.fetchMessages();
+      setState(() {
+        _messages.clear();
+        _messages.addAll(history);
+        _hasActiveChat = _messages.isNotEmpty;
+      });
+    } catch (e) {
+      _showSnackBar("Could not load chat history.", Colors.red);
+    } finally {
+      setState(() {
+        _isLoadingHistory = false;
+      });
+    }
   }
 
   void _initializeSpeech() async {
@@ -176,7 +215,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _initializeCamera() async {
     try {
       final cameras = await availableCameras();
-
       CameraDescription? frontCamera;
       CameraDescription? backCamera;
       for (var camera in cameras) {
@@ -186,15 +224,14 @@ class _HomeScreenState extends State<HomeScreen> {
           backCamera = camera;
         }
       }
-      
       CameraDescription? selectedCamera = frontCamera ?? backCamera;
       selectedCamera ??= cameras.isNotEmpty ? cameras.first : null;
+
       if (selectedCamera != null) {
         _cameraController = CameraController(
           selectedCamera,
           ResolutionPreset.medium,
         );
-
         _initializeCameraFuture = _cameraController!.initialize().then((_) {
           if (mounted) {
             setState(() {
@@ -212,7 +249,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startNewChat() {
-    _createNewSession();
+    setState(() {
+      _hasActiveChat = true;
+      _pendingFiles.clear();
+      _recognizedText = '';
+      _textController.clear();
+      _messages.clear();
+    });
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
       Navigator.of(context).pop();
     }
@@ -220,17 +263,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _requestPermissions() async {
     try {
-      Map<Permission, PermissionStatus> statuses = await [
+      await [
         Permission.microphone,
         Permission.camera,
         Permission.storage,
       ].request();
-
-      statuses.forEach((permission, status) {
-        if (status != PermissionStatus.granted) {
-          print('$permission permission denied');
-        }
-      });
     } catch (e) {
       print('Error requesting permissions: $e');
     }
@@ -239,15 +276,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startAudioRecording() async {
     try {
       await _requestPermissions();
-
       final status = await Permission.microphone.status;
       if (status != PermissionStatus.granted) {
         _showPermissionDeniedDialog('Microphone');
         return;
       }
+
       if (_audioRecorder == null) {
         await _initAudioRecorder();
       }
+
       if (_audioRecorder != null) {
         final tempDir = await getTemporaryDirectory();
         final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
@@ -257,13 +295,12 @@ class _HomeScreenState extends State<HomeScreen> {
           toFile: filePath,
           codec: Codec.pcm16WAV,
         );
-
         setState(() {
           _isRecordingAudio = true;
           _audioPath = filePath;
           _recognizedText = '';
         });
-        
+
         if (_speech.isAvailable) {
           await _speech.listen(
             onResult: (result) {
@@ -279,7 +316,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _showSnackBar('Recording started...', Colors.green);
       }
     } catch (e) {
-      print('Error starting audio recording: $e');
       _showErrorDialog('Failed to start audio recording: $e');
     }
   }
@@ -289,25 +325,20 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_speech.isListening) {
         await _speech.stop();
       }
-
       if (_audioRecorder != null && _isRecordingAudio) {
         String? recordedPath = await _audioRecorder!.stopRecorder();
-
         setState(() {
           _isRecordingAudio = false;
         });
-
         if (recordedPath != null && File(recordedPath).existsSync()) {
           final file = File(recordedPath);
           setState(() {
             _pendingFiles.add(file);
           });
-
           _showSnackBar('Audio recorded! Press send to share.', Colors.green);
         }
       }
     } catch (e) {
-      print('Error stopping audio recording: $e');
       _showErrorDialog('Failed to stop audio recording: $e');
     }
   }
@@ -315,27 +346,25 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startVideoRecording() async {
     try {
       await _requestPermissions();
-
       final status = await Permission.camera.status;
       if (status != PermissionStatus.granted) {
         _showPermissionDeniedDialog('Camera');
         return;
       }
+
       if (_cameraController == null || !_isCameraInitialized) {
         await _initializeCamera();
         if (_initializeCameraFuture != null) {
           await _initializeCameraFuture!;
         }
       }
+
       if (_cameraController != null && _cameraController!.value.isInitialized) {
         await _cameraController!.startVideoRecording();
-
         setState(() {
           _isRecordingVideo = true;
         });
-
         _showSnackBar('Video recording started...', Colors.green);
-        
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -359,7 +388,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _showErrorDialog('Camera not initialized');
       }
     } catch (e) {
-      print('Error starting video recording: $e');
       _showErrorDialog('Failed to start video recording: $e');
     }
   }
@@ -368,33 +396,26 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       if (_cameraController != null && _isRecordingVideo) {
         final XFile tempFile = await _cameraController!.stopVideoRecording();
-
         setState(() {
           _isRecordingVideo = false;
         });
         final File originalFile = File(tempFile.path);
-
         final Directory directory = await getTemporaryDirectory();
         final String newPath = path.join(
           directory.path,
           'video_${DateTime.now().millisecondsSinceEpoch}.mp4',
         );
         final File newFile = await originalFile.rename(newPath);
-        print('✅ Video file renamed to: ${newFile.path}');
-
         if (newFile.existsSync()) {
           setState(() {
             _pendingFiles.add(newFile);
           });
-
           _showSnackBar('Video recorded! Press send to share.', Colors.green);
         } else {
-          print('❌ Error: Renamed file does not exist at ${newFile.path}');
           _showErrorDialog('Failed to save the recorded video file.');
         }
       }
     } catch (e) {
-      print('❌ Error stopping video recording: $e');
       _showErrorDialog('Failed to stop video recording: $e');
     }
   }
@@ -403,27 +424,35 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'aac', 'wav', 'mov'],
+        allowedExtensions: [
+          'pdf',
+          'jpg',
+          'jpeg',
+          'png',
+          'mp4',
+          'mp3',
+          'aac',
+          'wav',
+          'mov'
+        ],
         allowMultiple: true,
       );
-
       if (result != null) {
         List<File> files = result.paths
             .where((path) => path != null)
             .map((path) => File(path!))
             .where((file) => file.existsSync())
             .toList();
-
         if (files.isNotEmpty) {
           setState(() {
             _pendingFiles.addAll(files);
           });
-
-          _showSnackBar('${files.length} file(s) added. Press send to share.', Colors.green);
+          _showSnackBar(
+              '${files.length} file(s) added. Press send to share.',
+              Colors.green);
         }
       }
     } catch (e) {
-      print('Error picking files: $e');
       _showErrorDialog('Failed to pick files: $e');
     }
   }
@@ -435,7 +464,6 @@ class _HomeScreenState extends State<HomeScreen> {
         isUser: isUser,
         attachments: attachments,
       ));
-
       if (!_hasActiveChat) {
         _hasActiveChat = true;
       }
@@ -464,114 +492,42 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _createNewSession() async {
-    setState(() {
-      _isLoadingSession = true;
-    });
-
-    try {
-      print('🚀 Creating new session with REAL ApiService...');
-      
-      print('🔐 Verifying authentication...');
-      await ApiService.verifyAuth();
-      print('✅ Auth verified successfully');
-      
-      print('📝 Creating session...');
-      final session = await ApiService.createSession("New Chat Session");
-      print('✅ Session created: ${session['id']}');
-      
-      setState(() {
-        _currentSessionId = session['id'];
-        _hasActiveChat = true;
-        _messages.clear();
-        _pendingFiles.clear();
-        _recognizedText = '';
-        _textController.clear();
-      });
-      
-      _showSnackBar('New session created successfully!', Colors.green);
-      
-    } catch (e) {
-      print('❌ Error creating session: $e');
-      String errorMessage = 'Failed to create new session';
-      
-      if (e.toString().contains('Backend not configured')) {
-        errorMessage = 'Please deploy backend to Vercel first';
-      } else if (e.toString().contains('No auth token')) {
-        errorMessage = 'Authentication required. Please login again.';
-      } else if (e.toString().contains('Failed to verify auth')) {
-        errorMessage = 'Authentication failed. Please login again.';
-      } else if (e.toString().contains('network') || e.toString().contains('connection')) {
-        errorMessage = 'Network error. Check your connection.';
-      } else {
-        errorMessage = 'Error: ${e.toString()}';
-      }
-      
-      _showSnackBar(errorMessage, Colors.red);
-    } finally {
-      setState(() {
-        _isLoadingSession = false;
-      });
-    }
-  }
-
+  // <-- REPLACED: This is the new _sendMessage method connected to the backend
   void _sendMessage() async {
-    print('📤 Send message called - text: ${_textController.text.trim()}, files: ${_pendingFiles.length}');
+    final messageText = _textController.text.trim();
+    final attachments = List.from(_pendingFiles);
 
-    if (_textController.text.trim().isEmpty && _pendingFiles.isEmpty) {
+    // For now, only handle text messages.
+    // File uploads are a separate, more complex step.
+    if (messageText.isEmpty) {
+      return;
+    }
+    if (attachments.isNotEmpty) {
+      _showSnackBar("File uploads are not yet connected to the backend.", Colors.orange);
       return;
     }
 
-    if (_currentSessionId == null) {
-      print('📝 No session exists, creating new one...');
-      await _createNewSession();
-      if (_currentSessionId == null) {
-        print('❌ Failed to create session, cannot send message');
-        return;
-      }
-    }
+    final tempMessage = ChatMessage(text: messageText, isUser: true);
 
-    String messageText = _textController.text.trim();
-    List<File> attachments = List.from(_pendingFiles);
-
-    _addMessage(
-      messageText.isEmpty ? "Files shared" : messageText,
-      true,
-      attachments.isNotEmpty ? attachments : null
-    );
-
+    // 1. Add message to UI immediately for good UX
     setState(() {
+      _messages.add(tempMessage);
       _textController.clear();
       _pendingFiles.clear();
       _recognizedText = '';
+      if (!_hasActiveChat) _hasActiveChat = true;
     });
 
+    // 2. Try to send the message to the backend
     try {
-      print('📤 Sending message to backend...');
-      await ApiService.addMessage(
-        _currentSessionId!,
-        messageText.isEmpty ? "Files shared" : messageText,
-        'user'
-      );
-      print('✅ Message sent successfully');
-
-      // Simulate bot response
-      Future.delayed(const Duration(seconds: 1), () async {
-        const botResponse = "Thank you for your message. How can I help you with your health concerns?";
-        
-        _addMessage(botResponse, false);
-        
-        try {
-          await ApiService.addMessage(_currentSessionId!, botResponse, 'bot');
-          print('✅ Bot response saved');
-        } catch (e) {
-          print('❌ Error saving bot message: $e');
-        }
-      });
-
+      await _apiService.storeTextMessage(messageText);
+      // The message is successfully saved. No fake response needed.
     } catch (e) {
-      print('❌ Error sending message: $e');
-      _showSnackBar('Failed to send message: ${e.toString()}', Colors.red);
+      _showSnackBar("Failed to send message. Please try again.", Colors.red);
+      // If it fails, remove the message from the UI to show it wasn't sent
+      setState(() {
+        _messages.remove(tempMessage);
+      });
     }
   }
 
@@ -581,7 +537,8 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('$permission Permission Required'),
-          content: Text('Please grant $permission permission to use this feature.'),
+          content:
+              Text('Please grant $permission permission to use this feature.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -624,7 +581,7 @@ class _HomeScreenState extends State<HomeScreen> {
         SnackBar(
           content: Text(message),
           backgroundColor: color,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 2),
         ),
       );
     }
@@ -639,6 +596,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // <-- MODIFIED: The build method now includes the model dropdown in the AppBar
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -649,7 +607,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
-        title: null,
+        // <-- NEW: Added the model dropdown as the title
+        title: ModelDropdown(
+          currentModel: _currentModel,
+          availableModels: _availableModels,
+          onModelChanged: _onModelChanged,
+        ),
+        centerTitle: true, // Center the dropdown
         backgroundColor: kEiraBackground,
         elevation: 0,
         leading: Container(
@@ -661,7 +625,6 @@ class _HomeScreenState extends State<HomeScreen> {
           child: IconButton(
             icon: const Icon(Icons.menu, color: Colors.white, size: 20),
             onPressed: () {
-              print('Menu button pressed');
               _scaffoldKey.currentState?.openDrawer();
             },
           ),
@@ -677,11 +640,11 @@ class _HomeScreenState extends State<HomeScreen> {
             color: kEiraBackground,
             onSelected: (value) async {
               if (value == 'logout') {
-                print('Logout tapped');
                 await FirebaseAuth.instance.signOut();
                 if (context.mounted) {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const LoginScreen()),
                     (Route<dynamic> route) => false,
                   );
                 }
@@ -693,7 +656,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 enabled: false,
                 padding: EdgeInsets.zero,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: kEiraBackground,
                     borderRadius: BorderRadius.circular(12),
@@ -753,7 +717,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(width: 12),
                     Text(
                       'Logout',
-                      style: TextStyle(color: Colors.red, fontFamily: 'Roboto', fontSize: 15),
+                      style: TextStyle(
+                          color: Colors.red,
+                          fontFamily: 'Roboto',
+                          fontSize: 15),
                     ),
                   ],
                 ),
@@ -761,6 +728,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
             child: Container(
               margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
               decoration: BoxDecoration(
                 color: kEiraYellow,
                 borderRadius: BorderRadius.circular(20),
@@ -789,8 +757,11 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: EdgeInsets.only(
               bottom: _pendingFiles.isNotEmpty ? 140.0 : 100.0,
             ),
+            // <-- MODIFIED: This section now shows a loading indicator while fetching history
             child: _hasActiveChat
-                ? MessagesListView(messages: _messages)
+                ? _isLoadingHistory
+                    ? const Center(child: CircularProgressIndicator())
+                    : MessagesListView(messages: _messages, currentModel: _currentModel)
                 : WelcomeView(onCapabilityTap: _startNewChat),
           ),
           Positioned(
@@ -825,17 +796,153 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// All other widget classes (PendingFilesDisplay, AppDrawer, etc.) are below
-// and do not need to be changed.
+class ModelDropdown extends StatelessWidget {
+  final String currentModel;
+  final List<String> availableModels;
+  final ValueChanged<String?> onModelChanged;
+
+  const ModelDropdown({
+    super.key,
+    required this.currentModel,
+    required this.availableModels,
+    required this.onModelChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 140),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(color: kEiraBorder.withOpacity(0.3), width: 1),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: currentModel,
+          icon: Container(
+            padding: const EdgeInsets.all(2),
+            child: const Icon(
+              Icons.keyboard_arrow_down,
+              color: kEiraYellow,
+              size: 20,
+            ),
+          ),
+          style: const TextStyle(
+            color: kEiraText,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            fontFamily: 'Roboto',
+          ),
+          dropdownColor: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          elevation: 12,
+          menuMaxHeight: 200,
+          onChanged: onModelChanged,
+          items: availableModels.map<DropdownMenuItem<String>>((String model) {
+            final isSelected = model == currentModel;
+            return DropdownMenuItem<String>(
+              value: model,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                decoration: BoxDecoration(
+                  color: isSelected ? kEiraYellowLight : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: isSelected ? kEiraYellow : Colors.transparent,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSelected ? kEiraYellow : kEiraTextSecondary.withOpacity(0.3),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        model,
+                        style: TextStyle(
+                          color: isSelected ? kEiraYellow : kEiraText,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontSize: 14,
+                          fontFamily: 'Roboto',
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isSelected)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: kEiraYellow,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Active',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Roboto',
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+          selectedItemBuilder: (BuildContext context) {
+            return availableModels.map<Widget>((String model) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: kEiraYellow,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    model,
+                    style: const TextStyle(
+                      color: kEiraYellow,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Roboto',
+                    ),
+                  ),
+                ],
+              );
+            }).toList();
+          },
+        ),
+      ),
+    );
+  }
+}
 
 class PendingFilesDisplay extends StatelessWidget {
   final List<File> files;
   final Function(int) onRemove;
+
   const PendingFilesDisplay({
     super.key,
     required this.files,
     required this.onRemove,
   });
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -870,21 +977,31 @@ class PendingFilesDisplay extends StatelessWidget {
 class PendingFileChip extends StatelessWidget {
   final File file;
   final VoidCallback onRemove;
+
   const PendingFileChip({
     super.key,
     required this.file,
     required this.onRemove,
   });
+
   @override
   Widget build(BuildContext context) {
     final displayName = path.basename(file.path);
     final displayIcon = _getFileIcon(file.path);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: kEiraBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -933,7 +1050,9 @@ class PendingFileChip extends StatelessWidget {
 
 class AppDrawer extends StatelessWidget {
   final VoidCallback onNewSession;
+
   const AppDrawer({super.key, required this.onNewSession});
+
   @override
   Widget build(BuildContext context) {
     return Drawer(
@@ -945,15 +1064,16 @@ class AppDrawer extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: ElevatedButton.icon(
                 onPressed: () {
-                  print('New Session button pressed');
                   onNewSession();
                 },
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text("New Session", style: TextStyle(color: Colors.white, fontFamily: 'Roboto')),
+                label: const Text("New Session",
+                    style: TextStyle(color: Colors.white, fontFamily: 'Roboto')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kEiraYellow,
                   minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25)),
                 ),
               ),
             ),
@@ -962,28 +1082,40 @@ class AppDrawer extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Recent Sessions", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Roboto')),
+                child: Text("Recent Sessions",
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        fontFamily: 'Roboto')),
               ),
             ),
             const SizedBox(height: 10),
             ListTile(
-              title: const Text("Sample Session", style: TextStyle(fontSize: 14, fontFamily: 'Roboto')),
-              subtitle: const Text("An example session", style: TextStyle(fontSize: 12, fontFamily: 'Roboto')),
-              onTap: () {
-                print('Recent session tapped');
-              },
+              title: const Text("test2",
+                  style: TextStyle(fontSize: 14, fontFamily: 'Roboto')),
+              subtitle: const Text("4 days ago",
+                  style: TextStyle(fontSize: 12, fontFamily: 'Roboto')),
+              onTap: () {},
+            ),
+            ListTile(
+              title: const Text("test",
+                  style: TextStyle(fontSize: 14, fontFamily: 'Roboto')),
+              subtitle: const Text("6/5/2025",
+                  style: TextStyle(fontSize: 12, fontFamily: 'Roboto')),
+              onTap: () {},
             ),
             const Spacer(),
             const Divider(color: kEiraBorder),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text("Logout", style: TextStyle(color: Colors.red, fontFamily: 'Roboto')),
+              title: const Text("Logout",
+                  style: TextStyle(color: Colors.red, fontFamily: 'Roboto')),
               onTap: () async {
-                print('Logout tapped');
                 await FirebaseAuth.instance.signOut();
                 if (context.mounted) {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const LoginScreen()),
                     (Route<dynamic> route) => false,
                   );
                 }
@@ -998,7 +1130,9 @@ class AppDrawer extends StatelessWidget {
 
 class WelcomeView extends StatelessWidget {
   final VoidCallback onCapabilityTap;
+
   const WelcomeView({super.key, required this.onCapabilityTap});
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -1010,6 +1144,7 @@ class WelcomeView extends StatelessWidget {
             'assets/images/Eira.png',
             width: 250,
             height: 250,
+            fit: BoxFit.contain,
           ),
           const SizedBox(height: 16),
           const Text(
@@ -1037,29 +1172,32 @@ class WelcomeView extends StatelessWidget {
                 {
                   'icon': Icons.medical_information,
                   'title': 'Medical Assistance',
-                  'description': 'Get reliable medical information and health guidance',
+                  'description':
+                      'Get reliable medical information and health guidance',
                   'color': const Color(0xFF8A5FFC),
                 },
                 {
                   'icon': Icons.medication,
                   'title': 'Medication Info',
-                  'description': 'Learn about medications, dosages, and interactions',
+                  'description':
+                      'Learn about medications, dosages, and interactions',
                   'color': const Color(0xFFF97316),
                 },
                 {
                   'icon': Icons.biotech,
                   'title': 'Health Analysis',
-                  'description': 'Understand symptoms and get preliminary health insights',
+                  'description':
+                      'Understand symptoms and get preliminary health insights',
                   'color': const Color(0xFF3B82F6),
                 },
                 {
                   'icon': Icons.favorite,
                   'title': 'Wellness Tips',
-                  'description': 'Receive personalized wellness and lifestyle recommendations',
+                  'description':
+                      'Receive personalized wellness and lifestyle recommendations',
                   'color': const Color(0xFFEC4899),
                 },
               ];
-
               final card = cardsData[index];
               return CapabilityCard(
                 icon: card['icon'],
@@ -1067,7 +1205,6 @@ class WelcomeView extends StatelessWidget {
                 description: card['description'],
                 color: card['color'],
                 onTap: () {
-                  print('${card['title']} card tapped');
                   onCapabilityTap();
                 },
               );
@@ -1086,6 +1223,7 @@ class CapabilityCard extends StatelessWidget {
   final String description;
   final Color color;
   final VoidCallback onTap;
+
   const CapabilityCard({
     super.key,
     required this.icon,
@@ -1094,6 +1232,7 @@ class CapabilityCard extends StatelessWidget {
     required this.color,
     required this.onTap,
   });
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -1162,8 +1301,10 @@ class CapabilityCard extends StatelessWidget {
 
 class MessagesListView extends StatelessWidget {
   final List<ChatMessage> messages;
+  final String currentModel;
 
-  const MessagesListView({super.key, required this.messages});
+  const MessagesListView({super.key, required this.messages, required this.currentModel});
+
   @override
   Widget build(BuildContext context) {
     if (messages.isEmpty) {
@@ -1188,6 +1329,10 @@ class MessagesListView extends StatelessWidget {
           text: message.text,
           attachments: message.attachments,
           timestamp: message.timestamp,
+          modelName: currentModel, // Corrected from selectedModel to currentModel
+          // NEW: Pass the remote file data
+          fileUrl: message.fileUrl,
+          fileType: message.fileType,
         );
       },
     );
@@ -1199,15 +1344,29 @@ class MessageBubble extends StatelessWidget {
   final String text;
   final List<File>? attachments;
   final DateTime timestamp;
+  final String modelName;
+  // NEW: Add fields from the updated ChatMessage model
+  final String? fileUrl;
+  final String? fileType;
+
   const MessageBubble({
     super.key,
     required this.isUser,
     required this.text,
     this.attachments,
     required this.timestamp,
+    required this.modelName,
+    // NEW: Add to constructor
+    this.fileUrl,
+    this.fileType,
   });
+
   @override
   Widget build(BuildContext context) {
+    // Determine if there is any file to display, either local or remote
+    final bool hasLocalAttachment = attachments != null && attachments!.isNotEmpty;
+    final bool hasRemoteAttachment = fileUrl != null;
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8.0),
       padding: const EdgeInsets.symmetric(vertical: 12.0),
@@ -1229,34 +1388,24 @@ class MessageBubble extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      isUser ? "You" : "Eira 0.1",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isUser ? kEiraText : kEiraYellowHover,
-                        fontFamily: 'Roboto',
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _formatTime(timestamp),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: kEiraTextSecondary,
-                        fontFamily: 'Roboto',
-                      ),
-                    ),
-                  ],
-                ),
+                Row(children: [
+                  Text(isUser ? "You" : modelName, style: TextStyle(fontWeight: FontWeight.bold, color: isUser ? kEiraText : kEiraYellowHover, fontFamily: 'Roboto')),
+                  const SizedBox(width: 8),
+                  Text(_formatTime(timestamp), style: const TextStyle(fontSize: 12, color: kEiraTextSecondary, fontFamily: 'Roboto')),
+                ]),
                 const SizedBox(height: 4),
                 if (text.isNotEmpty)
                   Text(text, style: const TextStyle(height: 1.5, fontFamily: 'Roboto')),
-                if (attachments != null && attachments!.isNotEmpty) ...[
+                // Display attachment chips
+                if (hasLocalAttachment) ...[
                   const SizedBox(height: 10),
                   ...attachments!.map((file) => AttachmentChip(file: file)),
                 ],
+                if (hasRemoteAttachment) ...[
+                  const SizedBox(height: 10),
+                  // We can reuse the AttachmentChip logic by passing a name and type
+                  RemoteAttachmentChip(fileUrl: fileUrl!, fileType: fileType),
+                ]
               ],
             ),
           )
@@ -1270,10 +1419,68 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
+// NEW: Create a widget specifically for displaying remote attachments
+class RemoteAttachmentChip extends StatelessWidget {
+  final String fileUrl;
+  final String? fileType;
+
+  const RemoteAttachmentChip({super.key, required this.fileUrl, this.fileType});
+
+  // Helper to get an icon from a MIME type
+  IconData _getIconForMimeType(String? mimeType) {
+    if (mimeType == null) return Icons.insert_drive_file;
+    if (mimeType.startsWith('image/')) return Icons.image;
+    if (mimeType.startsWith('video/')) return Icons.videocam;
+    if (mimeType.startsWith('audio/')) return Icons.audiotrack;
+    if (mimeType == 'application/pdf') return Icons.picture_as_pdf;
+    return Icons.insert_drive_file;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fileName = Uri.decodeComponent(fileUrl.split('/').last.split('?').first.substring(fileUrl.indexOf('_') + 1));
+    final icon = _getIconForMimeType(fileType);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: InkWell(
+        onTap: () {
+          // Here you would implement logic to open the URL, e.g., using url_launcher package
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Opening file: $fileName')));
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: kEiraYellowHover, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  fileName,
+                  style: const TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Roboto'),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AttachmentChip extends StatelessWidget {
   final File file;
+
   const AttachmentChip({super.key, required this.file});
-  
+
   @override
   Widget build(BuildContext context) {
     final fileName = path.basename(file.path);
@@ -1294,7 +1501,8 @@ class AttachmentChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(_getFileIcon(file.path), color: kEiraYellowHover, size: 18),
+              Icon(_getFileIcon(file.path),
+                  color: kEiraYellowHover, size: 18),
               const SizedBox(width: 8),
               Flexible(
                 child: Column(
@@ -1302,7 +1510,8 @@ class AttachmentChip extends StatelessWidget {
                   children: [
                     Text(
                       fileName,
-                      style: const TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Roboto'),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w500, fontFamily: 'Roboto'),
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
@@ -1346,6 +1555,70 @@ class AttachmentChip extends StatelessWidget {
   }
 }
 
+class TypingIndicator extends StatefulWidget {
+  const TypingIndicator({super.key});
+
+  @override
+  State<TypingIndicator> createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<TypingIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1400))
+      ..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const CircleAvatar(
+          backgroundColor: kEiraYellow,
+          child:
+              Icon(Icons.health_and_safety, color: Colors.white, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(20)),
+          child: Row(
+            children: List.generate(3, (index) {
+              return AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) {
+                  final double t =
+                      ((_controller.value + (index * 0.2)) % 1.0);
+                  final double scale = 1.0 - (4.0 * math.pow(t - 0.5, 2));
+                  return Transform.scale(scale: scale, child: child);
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  child: CircleAvatar(
+                      radius: 4, backgroundColor: Colors.grey.shade500),
+                ),
+              );
+            }),
+          ),
+        )
+      ],
+    );
+  }
+}
+
 class ChatInputArea extends StatefulWidget {
   final bool isRecordingAudio;
   final bool isRecordingVideo;
@@ -1356,6 +1629,7 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback onCameraOpen;
   final VoidCallback onSendMessage;
   final bool hasPendingFiles;
+
   const ChatInputArea({
     super.key,
     required this.isRecordingAudio,
@@ -1368,6 +1642,7 @@ class ChatInputArea extends StatefulWidget {
     required this.onSendMessage,
     required this.hasPendingFiles,
   });
+
   @override
   State<ChatInputArea> createState() => _ChatInputAreaState();
 }
@@ -1412,9 +1687,11 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                     controller: widget.textController,
                     decoration: const InputDecoration(
                       hintText: "Start typing a prompt",
-                      hintStyle: TextStyle(color: kEiraTextSecondary, fontFamily: 'Roboto'),
+                      hintStyle: TextStyle(
+                          color: kEiraTextSecondary, fontFamily: 'Roboto'),
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                      contentPadding: EdgeInsets.symmetric(
+                          horizontal: 20.0, vertical: 16.0),
                     ),
                     style: const TextStyle(fontFamily: 'Roboto'),
                     maxLines: null,
@@ -1423,7 +1700,6 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                 IconButton(
                   icon: const Icon(Icons.add, color: kEiraTextSecondary),
                   onPressed: () {
-                    print('Add file button pressed');
                     widget.onFileAdd();
                   },
                 ),
@@ -1436,7 +1712,6 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                   child: IconButton(
                     icon: const Icon(Icons.send, color: Colors.white),
                     onPressed: () {
-                      print('Send button pressed');
                       widget.onSendMessage();
                     },
                   ),
@@ -1452,7 +1727,6 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                 icon: widget.isRecordingAudio ? Icons.stop : Icons.mic,
                 label: widget.isRecordingAudio ? "Stop" : "Talk",
                 onPressed: () {
-                  print('Talk button pressed');
                   widget.onRecordToggle();
                 },
                 isActive: widget.isRecordingAudio,
@@ -1462,7 +1736,6 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                 icon: widget.isRecordingVideo ? Icons.stop : Icons.videocam,
                 label: widget.isRecordingVideo ? "Stop" : "Webcam",
                 onPressed: () {
-                  print('Webcam button pressed');
                   widget.onCameraOpen();
                 },
                 isActive: widget.isRecordingVideo,
@@ -1518,34 +1791,44 @@ class VideoRecordingPreview extends StatelessWidget {
   final CameraController cameraController;
   final VoidCallback onStopRecording;
   final VoidCallback onClose;
+
   const VideoRecordingPreview({
     super.key,
     required this.cameraController,
     required this.onStopRecording,
     required this.onClose,
   });
+
   @override
   Widget build(BuildContext context) {
-    if (!cameraController.value.isInitialized) {
-      return const Center(child: CircularProgressIndicator());
-    }
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 0,
-      backgroundColor: Colors.white,
-      child: Padding(
+      backgroundColor: Colors.transparent,
+      child: Container(
         padding: const EdgeInsets.all(20.0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
+            if (cameraController.value.isInitialized)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 240,
+                  height: 320,
+                  child: CameraPreview(cameraController),
+                ),
+              )
+            else
+              const SizedBox(
                 width: 240,
                 height: 320,
-                child: CameraPreview(cameraController),
+                child: Center(child: CircularProgressIndicator()),
               ),
-            ),
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1555,21 +1838,27 @@ class VideoRecordingPreview extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red.shade400,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
                   ),
-                  child: const Text("Stop Recording", style: TextStyle(fontFamily: 'Roboto')),
+                  child: const Text("Stop Recording",
+                      style: TextStyle(fontFamily: 'Roboto')),
                 ),
                 const SizedBox(width: 16),
                 OutlinedButton(
                   onPressed: onClose,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: kEiraText,
-                    side: BorderSide(color: kEiraBorder),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    side: const BorderSide(color: kEiraBorder),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
                   ),
-                  child: const Text("Close", style: TextStyle(fontFamily: 'Roboto')),
+                  child:
+                      const Text("Close", style: TextStyle(fontFamily: 'Roboto')),
                 ),
               ],
             ),
