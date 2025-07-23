@@ -90,20 +90,29 @@ class ChatMessage {
   final bool isUser;
   final List<File>? attachments;
   final DateTime timestamp;
-  // NEW: Add fields from the updated ChatMessage model
   final String? fileUrl;
   final String? fileType;
+
   ChatMessage({
     required this.text,
     required this.isUser,
     this.attachments,
     DateTime? timestamp,
-    // NEW: Add to constructor
     this.fileUrl,
     this.fileType,
-  }) : timestamp = timestamp ?? DateTime.now();
-}
+  }) : this.timestamp = timestamp ?? DateTime.now();
 
+  // NEW: Factory constructor to create a ChatMessage from JSON
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      text: json['message'] ?? '',
+      isUser: json['sender'] == 'user',
+      timestamp: DateTime.parse(json['created_at']),
+      fileUrl: json['file_url'],
+      fileType: json['file_type'],
+    );
+  }
+}
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -123,7 +132,8 @@ final List<ChatSession> _sessions = [];
   // <-- NEW: State variables for API communication
   final ApiService _apiService = ApiService();
   bool _isLoadingHistory = false;
-
+  // Inside _HomeScreenState
+ int? _currentSessionId;
   // Audio recording
   late stt.SpeechToText _speech;
   bool _isListening = false;
@@ -180,26 +190,31 @@ Future<void> _loadSessions() async {
 }
 
   // <-- NEW: Method to fetch all chat history from the backend
-  Future<void> _loadChatHistory() async {
+  // <-- REPLACE this method -->
+Future<void> _loadChatHistory({int? sessionId}) async {
+  setState(() {
+    _isLoadingHistory = true;
+    _messages.clear(); // Clear old messages before loading new ones
+  });
+  try {
+    // Pass the sessionId to the service
+    final history = await _apiService.fetchMessages(sessionId: sessionId);
     setState(() {
-      _isLoadingHistory = true;
+      _messages.addAll(history);
+      _hasActiveChat = true; // Always true when loading a chat
+      // If we loaded a specific session, update our state
+      if (sessionId != null) {
+        _currentSessionId = sessionId;
+      }
     });
-    try {
-      final history = await _apiService.fetchMessages();
-      setState(() {
-        _messages.clear();
-        _messages.addAll(history);
-        _hasActiveChat = _messages.isNotEmpty;
-      });
-    } catch (e) {
-      _showSnackBar("Could not load chat history.", Colors.red);
-    } finally {
-      setState(() {
-        _isLoadingHistory = false;
-      });
-    }
+  } catch (e) {
+    _showSnackBar("Could not load chat history.", Colors.red);
+  } finally {
+    setState(() {
+      _isLoadingHistory = false;
+    });
   }
-
+}
   void _initializeSpeech() async {
     try {
       bool available = await _speech.initialize(
@@ -263,17 +278,15 @@ Future<void> _loadSessions() async {
   }
 
   void _startNewChat() {
-    setState(() {
-      _hasActiveChat = true;
-      _pendingFiles.clear();
-      _recognizedText = '';
-      _textController.clear();
-      _messages.clear();
-    });
-    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
-      Navigator.of(context).pop();
-    }
+  setState(() {
+    _hasActiveChat = true;
+    _messages.clear();
+    _currentSessionId = null; // This is now officially a "new" chat
+  });
+  if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+    Navigator.of(context).pop();
   }
+}
 
   Future<void> _requestPermissions() async {
     try {
@@ -510,45 +523,70 @@ Future<void> _loadSessions() async {
   // In _HomeScreenState inside main.dart
 // <-- REPLACE your _sendMessage method with this corrected version -->
 
+void _onSessionTapped(int sessionId) {
+  Navigator.of(context).pop();
+  _loadChatHistory(sessionId: sessionId);
+}
+
+
 void _sendMessage() async {
   final messageText = _textController.text.trim();
-  final attachments = List.from(_pendingFiles);
+  final attachments = List<File>.from(_pendingFiles);
 
   if (messageText.isEmpty && attachments.isEmpty) return;
 
-  // For now, only handle text messages.
-  if (attachments.isNotEmpty) {
-    _showSnackBar("File uploads are not yet implemented.", Colors.orange);
-    return;
-  }
-
-  final tempMessage = ChatMessage(text: messageText, isUser: true);
-
-  // 1. Add message to UI immediately for good UX
+  // Clear the inputs immediately
   setState(() {
-    _messages.add(tempMessage);
     _textController.clear();
-    _recognizedText = '';
-    if (!_hasActiveChat) _hasActiveChat = true;
+    _pendingFiles.clear();
   });
 
-  // 2. Try to send the message to the backend
-  try {
-    await _apiService.storeTextMessage(messageText);
+  // Add a temporary message to the UI
+  _addMessage(
+    messageText.isEmpty ? (attachments.length == 1 ? "File sent" : "Files sent") : messageText,
+    true,
+    attachments.isNotEmpty ? attachments : null,
+  );
 
-    // <-- THIS IS THE FIX -->
-    // After a message is successfully sent, a session might have been created
-    // or updated. We must refresh our list of sessions from the server.
+  try {
+    // This logic now handles both text and file messages correctly
+    if (attachments.isNotEmpty) {
+      for (var file in attachments) {
+        // Pass the current session ID to the file upload method
+        final responseData = await _apiService.storeFileMessage(
+          messageText,
+          file,
+          sessionId: _currentSessionId,
+        );
+        // If it was a new chat, update the current session ID
+        if (_currentSessionId == null) {
+          setState(() {
+            _currentSessionId = responseData['session_id'];
+          });
+        }
+      }
+    } else {
+      // Logic for text-only messages
+      final responseData = await _apiService.storeTextMessage(
+        messageText,
+        sessionId: _currentSessionId,
+      );
+      if (_currentSessionId == null) {
+        setState(() {
+          _currentSessionId = responseData['session_id'];
+        });
+      }
+    }
+
+    // After any successful message, refresh the session list
     await _loadSessions();
 
   } catch (e) {
-    _showSnackBar("Failed to send message. Please try again.", Colors.red);
-    // If it fails, remove the message from the UI to show it wasn't sent
-    setState(() {
-      _messages.remove(tempMessage);
-    });
+    _showSnackBar("Failed to send. Please try again.", Colors.red);
+    // Here you could add logic to restore the message text and files to the input
   }
 }
+
 
   void _showPermissionDeniedDialog(String permission) {
     showDialog(
@@ -575,6 +613,7 @@ void _sendMessage() async {
       },
     );
   }
+  
 
   void _showErrorDialog(String message) {
     showDialog(
@@ -769,7 +808,7 @@ void _sendMessage() async {
           ),
         ],
       ),
-      drawer: AppDrawer(onNewSession: _startNewChat, sessions: _sessions),
+      drawer: AppDrawer(onNewSession: _startNewChat, sessions: _sessions,onSessionTapped: _onSessionTapped),
       body: Stack(
         children: [
           Padding(
@@ -1067,15 +1106,21 @@ class PendingFileChip extends StatelessWidget {
   }
 }
 
+// In main.dart
+// <-- REPLACE your entire AppDrawer class with this corrected version -->
+
 class AppDrawer extends StatelessWidget {
   final VoidCallback onNewSession;
-  // NEW: The drawer now accepts a list of sessions
   final List<ChatSession> sessions;
+  // <-- 1. ADD THIS NEW PROPERTY -->
+  final Function(int) onSessionTapped;
 
   const AppDrawer({
     super.key,
     required this.onNewSession,
-    required this.sessions, // <-- MODIFIED constructor
+    required this.sessions,
+    // <-- 2. ADD THIS TO THE CONSTRUCTOR -->
+    required this.onSessionTapped,
   });
 
   @override
@@ -1116,16 +1161,11 @@ class AppDrawer extends StatelessWidget {
                       itemCount: sessions.length,
                       itemBuilder: (context, index) {
                         final session = sessions[index];
-                        // Here you can format the date nicely if you add the 'intl' package
-                        // final formattedDate = DateFormat.yMMMd().format(session.createdAt);
                         return ListTile(
                           title: Text(session.title, style: const TextStyle(fontSize: 14)),
-                          subtitle: Text("ID: ${session.id}", style: const TextStyle(fontSize: 12)),
-                          onTap: () {
-                            // TODO: Implement logic to load a specific session's chat history
-                            print('Tapped session ID: ${session.id}');
-                            Navigator.of(context).pop(); // Close the drawer
-                          },
+                          subtitle: Text("Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
+                          // <-- 3. USE THE NEW CALLBACK HERE -->
+                          onTap: () => onSessionTapped(session.id),
                         );
                       },
                     ),
