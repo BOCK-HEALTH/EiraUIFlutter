@@ -5,6 +5,25 @@ import 'package:dio/dio.dart'; // Using Dio as it's already in your project
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_application_1/main.dart'; // To access ChatMessage
 
+// At the top of lib/api_service.dart
+
+class ChatSession {
+  final int id;
+  final String title;
+  final DateTime createdAt;
+
+  ChatSession({required this.id, required this.title, required this.createdAt});
+
+  // Factory constructor to create a ChatSession from JSON
+  factory ChatSession.fromJson(Map<String, dynamic> json) {
+    return ChatSession(
+      id: json['id'],
+      title: json['title'],
+      createdAt: DateTime.parse(json['created_at']),
+    );
+  }
+}
+
 class ApiService {
   // !!! PASTE YOUR VERCEL URL HERE !!!
   final String _baseUrl = "https://eira-backend-mu.vercel.app";
@@ -19,6 +38,30 @@ class ApiService {
     }
     return await user.getIdToken();
   }
+
+  Future<List<ChatSession>> fetchSessions() async {
+    final token = await _getIdToken();
+    if (token == null) return [];
+
+    try {
+      final response = await _dio.get(
+        '$_baseUrl/api/getSessions',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = response.data;
+        // Convert the JSON list to a list of ChatSession objects
+        return data.map((json) => ChatSession.fromJson(json)).toList();
+      } else {
+        return [];
+      }
+    } on DioException catch (e) {
+      print("Error fetching sessions: $e");
+      return [];
+    }
+  }
+
 
   // Method to fetch all messages from the backend
   // In lib/api_service.dart

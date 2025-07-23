@@ -115,7 +115,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _hasActiveChat = false;
   final List<ChatMessage> _messages = [];
-
+  // Inside _HomeScreenState
+final List<ChatSession> _sessions = [];
   // <-- NEW: State variable for current model
   String _currentModel = 'Eira 0.1';
   final List<String> _availableModels = ['Eira 0.1', 'Eira 0.2', 'Eira 1'];
@@ -152,6 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _initAudioRecorder();
     _initializeCamera();
     _loadChatHistory(); // Load previous chats when the screen starts
+    _loadSessions(); 
   }
 
   // <-- NEW: Method to handle model selection
@@ -164,6 +166,18 @@ class _HomeScreenState extends State<HomeScreen> {
       _showSnackBar('Switched to $newModel', kEiraYellow);
     }
   }
+
+Future<void> _loadSessions() async {
+  try {
+    final sessions = await _apiService.fetchSessions();
+    setState(() {
+      _sessions.clear();
+      _sessions.addAll(sessions);
+    });
+  } catch (e) {
+    _showSnackBar("Could not load sessions.", Colors.red);
+  }
+}
 
   // <-- NEW: Method to fetch all chat history from the backend
   Future<void> _loadChatHistory() async {
@@ -493,43 +507,48 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // <-- REPLACED: This is the new _sendMessage method connected to the backend
-  void _sendMessage() async {
-    final messageText = _textController.text.trim();
-    final attachments = List.from(_pendingFiles);
+  // In _HomeScreenState inside main.dart
+// <-- REPLACE your _sendMessage method with this corrected version -->
 
-    // For now, only handle text messages.
-    // File uploads are a separate, more complex step.
-    if (messageText.isEmpty) {
-      return;
-    }
-    if (attachments.isNotEmpty) {
-      _showSnackBar("File uploads are not yet connected to the backend.", Colors.orange);
-      return;
-    }
+void _sendMessage() async {
+  final messageText = _textController.text.trim();
+  final attachments = List.from(_pendingFiles);
 
-    final tempMessage = ChatMessage(text: messageText, isUser: true);
+  if (messageText.isEmpty && attachments.isEmpty) return;
 
-    // 1. Add message to UI immediately for good UX
-    setState(() {
-      _messages.add(tempMessage);
-      _textController.clear();
-      _pendingFiles.clear();
-      _recognizedText = '';
-      if (!_hasActiveChat) _hasActiveChat = true;
-    });
-
-    // 2. Try to send the message to the backend
-    try {
-      await _apiService.storeTextMessage(messageText);
-      // The message is successfully saved. No fake response needed.
-    } catch (e) {
-      _showSnackBar("Failed to send message. Please try again.", Colors.red);
-      // If it fails, remove the message from the UI to show it wasn't sent
-      setState(() {
-        _messages.remove(tempMessage);
-      });
-    }
+  // For now, only handle text messages.
+  if (attachments.isNotEmpty) {
+    _showSnackBar("File uploads are not yet implemented.", Colors.orange);
+    return;
   }
+
+  final tempMessage = ChatMessage(text: messageText, isUser: true);
+
+  // 1. Add message to UI immediately for good UX
+  setState(() {
+    _messages.add(tempMessage);
+    _textController.clear();
+    _recognizedText = '';
+    if (!_hasActiveChat) _hasActiveChat = true;
+  });
+
+  // 2. Try to send the message to the backend
+  try {
+    await _apiService.storeTextMessage(messageText);
+
+    // <-- THIS IS THE FIX -->
+    // After a message is successfully sent, a session might have been created
+    // or updated. We must refresh our list of sessions from the server.
+    await _loadSessions();
+
+  } catch (e) {
+    _showSnackBar("Failed to send message. Please try again.", Colors.red);
+    // If it fails, remove the message from the UI to show it wasn't sent
+    setState(() {
+      _messages.remove(tempMessage);
+    });
+  }
+}
 
   void _showPermissionDeniedDialog(String permission) {
     showDialog(
@@ -750,7 +769,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      drawer: AppDrawer(onNewSession: _startNewChat),
+      drawer: AppDrawer(onNewSession: _startNewChat, sessions: _sessions),
       body: Stack(
         children: [
           Padding(
@@ -1050,8 +1069,14 @@ class PendingFileChip extends StatelessWidget {
 
 class AppDrawer extends StatelessWidget {
   final VoidCallback onNewSession;
+  // NEW: The drawer now accepts a list of sessions
+  final List<ChatSession> sessions;
 
-  const AppDrawer({super.key, required this.onNewSession});
+  const AppDrawer({
+    super.key,
+    required this.onNewSession,
+    required this.sessions, // <-- MODIFIED constructor
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1063,17 +1088,13 @@ class AppDrawer extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: ElevatedButton.icon(
-                onPressed: () {
-                  onNewSession();
-                },
+                onPressed: onNewSession,
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text("New Session",
-                    style: TextStyle(color: Colors.white, fontFamily: 'Roboto')),
+                label: const Text("New Session", style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kEiraYellow,
                   minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(25)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                 ),
               ),
             ),
@@ -1082,40 +1103,43 @@ class AppDrawer extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Recent Sessions",
-                    style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        fontFamily: 'Roboto')),
+                child: Text("Recent Sessions", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
               ),
             ),
             const SizedBox(height: 10),
-            ListTile(
-              title: const Text("test2",
-                  style: TextStyle(fontSize: 14, fontFamily: 'Roboto')),
-              subtitle: const Text("4 days ago",
-                  style: TextStyle(fontSize: 12, fontFamily: 'Roboto')),
-              onTap: () {},
+
+            // --- DYNAMIC SESSION LIST ---
+            Expanded(
+              child: sessions.isEmpty
+                  ? const Center(child: Text("No recent sessions.", style: TextStyle(color: kEiraTextSecondary)))
+                  : ListView.builder(
+                      itemCount: sessions.length,
+                      itemBuilder: (context, index) {
+                        final session = sessions[index];
+                        // Here you can format the date nicely if you add the 'intl' package
+                        // final formattedDate = DateFormat.yMMMd().format(session.createdAt);
+                        return ListTile(
+                          title: Text(session.title, style: const TextStyle(fontSize: 14)),
+                          subtitle: Text("ID: ${session.id}", style: const TextStyle(fontSize: 12)),
+                          onTap: () {
+                            // TODO: Implement logic to load a specific session's chat history
+                            print('Tapped session ID: ${session.id}');
+                            Navigator.of(context).pop(); // Close the drawer
+                          },
+                        );
+                      },
+                    ),
             ),
-            ListTile(
-              title: const Text("test",
-                  style: TextStyle(fontSize: 14, fontFamily: 'Roboto')),
-              subtitle: const Text("6/5/2025",
-                  style: TextStyle(fontSize: 12, fontFamily: 'Roboto')),
-              onTap: () {},
-            ),
-            const Spacer(),
+
             const Divider(color: kEiraBorder),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text("Logout",
-                  style: TextStyle(color: Colors.red, fontFamily: 'Roboto')),
+              title: const Text("Logout", style: TextStyle(color: Colors.red)),
               onTap: () async {
                 await FirebaseAuth.instance.signOut();
                 if (context.mounted) {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(
-                        builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
                     (Route<dynamic> route) => false,
                   );
                 }
