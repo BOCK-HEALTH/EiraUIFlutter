@@ -1,5 +1,4 @@
 // lib/api_service.dart
-
 import 'dart:convert';
 import 'package:dio/dio.dart'; // Using Dio as it's already in your project
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,8 +6,8 @@ import 'package:flutter_application_1/main.dart'; // To access ChatMessage
 import 'package:http_parser/http_parser.dart';
 import 'package:mime/mime.dart';
 import 'dart:io';
-// At the top of lib/api_service.dart
 
+// At the top of lib/api_service.dart
 class ChatSession {
   final int id;
   final String title;
@@ -41,6 +40,69 @@ class ApiService {
     return await user.getIdToken();
   }
 
+  Future<void> updateSessionTitle(int sessionId, String newTitle) async {
+    try {
+      final token = await _getIdToken();
+      if (token == null) {
+        throw Exception("User not authenticated");
+      }
+
+      print('Attempting to update session $sessionId with title: "$newTitle"');
+      
+      final response = await _dio.put(
+        '$_baseUrl/api/sessions/$sessionId',
+        data: {'title': newTitle},
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
+      
+      print('Session $sessionId title updated to "$newTitle"');
+      print('Update response: ${response.statusCode}');
+    } on DioException catch (e) {
+      print('Dio error updating session title: ${e.response?.statusCode}');
+      print('Error response data: ${e.response?.data}');
+      throw Exception('Failed to update session title.');
+    } catch (e) {
+      print('Unknown error updating session title: $e');
+      throw Exception('An unknown error occurred.');
+    }
+  }
+
+  /// Deletes a specific session.
+  Future<void> deleteSession(int sessionId) async {
+    try {
+      final token = await _getIdToken();
+      if (token == null) {
+        throw Exception("User not authenticated");
+      }
+
+      print('Attempting to delete session $sessionId');
+      
+      final response = await _dio.delete(
+        '$_baseUrl/api/sessions/$sessionId',
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+          },
+        ),
+      );
+      
+      print('Session $sessionId deleted successfully');
+      print('Delete response: ${response.statusCode}');
+    } on DioException catch (e) {
+      print('Dio error deleting session: ${e.response?.statusCode}');
+      print('Error response data: ${e.response?.data}');
+      throw Exception('Failed to delete session.');
+    } catch (e) {
+      print('Unknown error deleting session: $e');
+      throw Exception('An unknown error occurred.');
+    }
+  }
+
   Future<List<ChatSession>> fetchSessions() async {
     final token = await _getIdToken();
     if (token == null) return [];
@@ -64,11 +126,9 @@ class ApiService {
     }
   }
 
-
   // Method to fetch all messages from the backend
   // In lib/api_service.dart
-
-Future<List<ChatMessage>> fetchMessages({int? sessionId}) async {
+  Future<List<ChatMessage>> fetchMessages({int? sessionId}) async {
     final token = await _getIdToken();
     if (token == null) return [];
 
@@ -97,77 +157,82 @@ Future<List<ChatMessage>> fetchMessages({int? sessionId}) async {
   }
 
   // Method to store a new text message
-  Future<Map<String, dynamic>> storeTextMessage(String message, {int? sessionId}) async {
-  final token = await _getIdToken();
-  if (token == null || message.isEmpty) {
-    throw Exception("User not authenticated or message is empty");
+  // MODIFIED: Added optional 'title' parameter to set the title on creation
+  Future<Map<String, dynamic>> storeTextMessage(String message, {int? sessionId, String? title}) async {
+    final token = await _getIdToken();
+    if (token == null || message.isEmpty) {
+      throw Exception("User not authenticated or message is empty");
+    }
+
+    // Build the request body, including the session ID and optional title
+    final Map<String, dynamic> body = {
+      'message': message,
+      'sessionId': sessionId,
+    };
+    
+    // If a title is provided (for a new session), add it to the body
+    if (sessionId == null && title != null) {
+      body['title'] = title;
+    }
+
+    try {
+      final response = await _dio.post(
+        '$_baseUrl/api/storeMessage',
+        data: jsonEncode(body), // Send the new body
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      print("Error storing message: $e");
+      throw Exception("Failed to send message.");
+    }
   }
 
-  // Build the request body, including the session ID
-  final Map<String, dynamic> body = {
-    'message': message,
-    'sessionId': sessionId, // Can be null, which is what we want for a new chat
-  };
+  // In lib/api_service.dart
+  Future<Map<String, dynamic>> storeFileMessage(String message, File file, {int? sessionId}) async {
+    final token = await _getIdToken();
+    if (token == null) throw Exception("User not authenticated");
 
-  try {
-    final response = await _dio.post(
-      '$_baseUrl/api/storeMessage',
-      data: jsonEncode(body), // Send the new body
-      options: Options(
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+    String fileName = file.path.split('/').last;
+    
+    // Create a map to hold form data
+    final Map<String, dynamic> formDataMap = {
+      'message': message,
+      'file': await MultipartFile.fromFile(
+        file.path,
+        filename: fileName,
+        contentType: MediaType.parse(lookupMimeType(file.path) ?? 'application/octet-stream'),
       ),
-    );
-    return response.data;
-  } on DioException catch (e) {
-    print("Error storing message: $e");
-    throw Exception("Failed to send message.");
+    };
+
+    // Only add sessionId to the form if it's not null
+    if (sessionId != null) {
+      formDataMap['sessionId'] = sessionId.toString();
+    }
+
+    FormData formData = FormData.fromMap(formDataMap);
+
+    try {
+      final response = await _dio.post(
+        '$_baseUrl/api/storeFileMessage',
+        data: formData,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+          },
+        ),
+      );
+
+      // Return the server's response
+      return response.data;
+    } on DioException catch (e) {
+      print("Error storing file message: $e");
+      throw Exception("Failed to send file.");
+    }
   }
-}
-
-// In lib/api_service.dart
-
-Future<Map<String, dynamic>> storeFileMessage(String message, File file, {int? sessionId}) async {
-  final token = await _getIdToken();
-  if (token == null) throw Exception("User not authenticated");
-
-  String fileName = file.path.split('/').last;
-  
-  // Create a map to hold form data
-  final Map<String, dynamic> formDataMap = {
-    'message': message,
-    'file': await MultipartFile.fromFile(
-      file.path,
-      filename: fileName,
-      contentType: MediaType.parse(lookupMimeType(file.path) ?? 'application/octet-stream'),
-    ),
-  };
-
-  // Only add sessionId to the form if it's not null
-  if (sessionId != null) {
-    formDataMap['sessionId'] = sessionId.toString();
-  }
-
-  FormData formData = FormData.fromMap(formDataMap);
-
-  try {
-    final response = await _dio.post(
-      '$_baseUrl/api/storeFileMessage',
-      data: formData,
-      options: Options(
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      ),
-    );
-    // Return the server's response
-    return response.data;
-  } on DioException catch (e) {
-    print("Error storing file message: $e");
-    throw Exception("Failed to send file.");
-  }
-}
-
 }

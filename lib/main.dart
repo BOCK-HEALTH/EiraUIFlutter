@@ -106,7 +106,7 @@ class ChatMessage {
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final fileUrlData = json['file_url'];
     final fileTypeData = json['file_type'];
-    
+
     return ChatMessage(
       text: json['message'] ?? '',
       isUser: json['sender'] == 'user',
@@ -130,15 +130,15 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  
+
   bool _hasActiveChat = false;
-  // --- Using a final list is correct. It prevents accidental reassignment. ---
+  // --- Using a final list is correct. It prevents accidental reassignmen
   final List<ChatMessage> _messages = [];
   final List<ChatSession> _sessions = [];
-  
+
   String _currentModel = 'Eira 0.1';
   final List<String> _availableModels = ['Eira 0.1', 'Eira 0.2', 'Eira 1'];
-  
+
   final ApiService _apiService = ApiService();
   bool _isLoadingHistory = false;
   int? _currentSessionId;
@@ -157,6 +157,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isRecordingVideo = false;
   String? _videoPath;
   bool _isCameraInitialized = false;
+
   final List<File> _pendingFiles = [];
   final ImagePicker _picker = ImagePicker();
   final Dio _dio = Dio();
@@ -171,36 +172,126 @@ class _HomeScreenState extends State<HomeScreen> {
     _initializeCamera();
     _loadSessions();
   }
-  
+
   // --- CORRECT PATTERN: Use .clear() and .addAll() to modify a final list ---
   // This avoids both the "final" error and any potential type mismatches from assignment.
   Future<void> _loadSessions() async {
-  try {
-    // CORRECTION:
-    // The error says the value from the right side is a 'List<ChatSession>'.
-    // To fix this, we declare the variable 'sessions' to be the exact same type.
-    final List<ChatSession> sessions = await _apiService.fetchSessions();
-
-    setState(() {
-      _sessions.clear();
-      // The addAll method still works perfectly because it can accept a List.
-      _sessions.addAll(sessions);
-    });
-  } catch (e) {
-    // Added more specific error logging to help debug if it continues.
-    print("Error in _loadSessions: $e");
-    print("Runtime type of error: ${e.runtimeType}");
-    _showSnackBar("Could not load sessions.", Colors.red);
+    try {
+      // CORRECTION:
+      // The error says the value from the right side is a 'List<ChatSession>'.
+      // To fix this, we declare the variable 'sessions' to be the exact same type.
+      final List<ChatSession> sessions = await _apiService.fetchSessions();
+      setState(() {
+        _sessions.clear();
+        // The addAll method still works perfectly because it can accept a List.
+        _sessions.addAll(sessions);
+      });
+    } catch (e) {
+      // Added more specific error logging to help debug if it continues.
+      print("Error in _loadSessions: $e");
+      print("Runtime type of error: ${e.runtimeType}");
+      _showSnackBar("Could not load sessions.", Colors.red);
+    }
   }
-}
+
+  Future<void> _editSessionTitle(ChatSession session) async {
+    final newTitleController = TextEditingController(text: session.title);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Session Name'),
+        content: TextField(
+          controller: newTitleController,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Enter new name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      final newTitle = newTitleController.text.trim();
+      if (newTitle.isNotEmpty && newTitle != session.title) {
+        try {
+          await _apiService.updateSessionTitle(session.id, newTitle);
+
+          // To update the UI, we must replace the object in the list
+          setState(() {
+            final index = _sessions.indexWhere((s) => s.id == session.id);
+            if (index != -1) {
+              // Create a new session object with the updated title
+              _sessions[index] = ChatSession(
+                id: session.id,
+                title: newTitle,
+                createdAt: session.createdAt,
+              );
+            }
+          });
+          _showSnackBar('Session name updated!', kEiraYellow);
+        } catch (e) {
+          _showSnackBar('Failed to update session name.', Colors.red);
+        }
+      }
+    }
+  }
+
+  /// Shows a confirmation dialog and deletes a session.
+  Future<bool> _deleteSession(int sessionId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Session?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      try {
+        await _apiService.deleteSession(sessionId);
+        setState(() {
+          _sessions.removeWhere((s) => s.id == sessionId);
+          // If the deleted session was the active one, start a new chat view
+          if (_currentSessionId == sessionId) {
+            _startNewChat();
+          }
+        });
+        _showSnackBar('Session deleted.', kEiraYellow);
+        return true;
+      } catch (e) {
+        _showSnackBar('Failed to delete session.', Colors.red);
+        return false;
+      }
+    }
+    return false; // User cancelled
+  }
+
   Future<void> _loadChatHistory({int? sessionId}) async {
     setState(() {
       _isLoadingHistory = true;
       _messages.clear();
     });
-    
+
     try {
-      final List<ChatMessage> history = await _apiService.fetchMessages(sessionId: sessionId);
+      final List<ChatMessage> history =
+          await _apiService.fetchMessages(sessionId: sessionId);
       setState(() {
         _messages.addAll(history);
         _hasActiveChat = true;
@@ -257,7 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final cameras = await availableCameras();
       CameraDescription? frontCamera;
       CameraDescription? backCamera;
-      
+
       for (var camera in cameras) {
         if (camera.lensDirection == CameraLensDirection.front) {
           frontCamera = camera;
@@ -265,10 +356,10 @@ class _HomeScreenState extends State<HomeScreen> {
           backCamera = camera;
         }
       }
-      
+
       CameraDescription? selectedCamera = frontCamera ?? backCamera;
       selectedCamera ??= cameras.isNotEmpty ? cameras.first : null;
-      
+
       if (selectedCamera != null) {
         _cameraController = CameraController(
           selectedCamera,
@@ -292,7 +383,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _startNewChat() {
     setState(() {
-      _hasActiveChat = false; 
+      _hasActiveChat = false;
       _messages.clear();
       _currentSessionId = null;
     });
@@ -321,27 +412,22 @@ class _HomeScreenState extends State<HomeScreen> {
         _showPermissionDeniedDialog('Microphone');
         return;
       }
-
       if (_audioRecorder == null) {
         await _initAudioRecorder();
       }
-
       if (_audioRecorder != null) {
         final tempDir = await getTemporaryDirectory();
         final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
         final filePath = '${tempDir.path}/$fileName';
-
         await _audioRecorder!.startRecorder(
           toFile: filePath,
           codec: Codec.pcm16WAV,
         );
-
         setState(() {
           _isRecordingAudio = true;
           _audioPath = filePath;
           _recognizedText = '';
         });
-
         if (_speech.isAvailable) {
           await _speech.listen(
             onResult: (result) {
@@ -354,7 +440,6 @@ class _HomeScreenState extends State<HomeScreen> {
             pauseFor: const Duration(seconds: 3),
           );
         }
-
         _showSnackBar('Recording started...', Colors.green);
       }
     } catch (e) {
@@ -367,13 +452,11 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_speech.isListening) {
         await _speech.stop();
       }
-
       if (_audioRecorder != null && _isRecordingAudio) {
         String? recordedPath = await _audioRecorder!.stopRecorder();
         setState(() {
           _isRecordingAudio = false;
         });
-
         if (recordedPath != null && File(recordedPath).existsSync()) {
           final file = File(recordedPath);
           setState(() {
@@ -395,22 +478,18 @@ class _HomeScreenState extends State<HomeScreen> {
         _showPermissionDeniedDialog('Camera');
         return;
       }
-
       if (_cameraController == null || !_isCameraInitialized) {
         await _initializeCamera();
         if (_initializeCameraFuture != null) {
           await _initializeCameraFuture!;
         }
       }
-
       if (_cameraController != null && _cameraController!.value.isInitialized) {
         await _cameraController!.startVideoRecording();
         setState(() {
           _isRecordingVideo = true;
         });
-
         _showSnackBar('Video recording started...', Colors.green);
-
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -445,7 +524,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _isRecordingVideo = false;
         });
-
         final File originalFile = File(tempFile.path);
         final Directory directory = await getTemporaryDirectory();
         final String newPath = path.join(
@@ -453,7 +531,6 @@ class _HomeScreenState extends State<HomeScreen> {
           'video_${DateTime.now().millisecondsSinceEpoch}.mp4',
         );
         final File newFile = await originalFile.rename(newPath);
-
         if (newFile.existsSync()) {
           setState(() {
             _pendingFiles.add(newFile);
@@ -485,14 +562,12 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
         allowMultiple: true,
       );
-
       if (result != null) {
         List<File> files = result.paths
             .where((path) => path != null)
             .map((path) => File(path!))
             .where((file) => file.existsSync())
             .toList();
-
         if (files.isNotEmpty) {
           setState(() {
             _pendingFiles.addAll(files);
@@ -547,61 +622,101 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadChatHistory(sessionId: sessionId); // Load the specific session
   }
 
-  void _sendMessage() async {
-    final messageText = _textController.text.trim();
-    final attachments = List<File>.from(_pendingFiles);
-    
-    if (messageText.isEmpty && attachments.isEmpty) return;
+  // lib/main.dart
 
+// REPLACE the entire _sendMessage function with this new version.
+void _sendMessage() async {
+  final messageText = _textController.text.trim();
+  final attachments = List<File>.from(_pendingFiles);
+
+  if (messageText.isEmpty && attachments.isEmpty) return;
+
+  // Check if this is a new chat before sending the message
+  final bool isNewSession = _currentSessionId == null;
+
+  // Immediately update the UI for a responsive feel
+  _addMessage(
+    messageText.isEmpty
+        ? (attachments.length == 1 ? "File sent" : "Files sent")
+        : messageText,
+    true,
+    attachments.isNotEmpty ? attachments : null,
+  );
+  setState(() {
+    _textController.clear();
+    _pendingFiles.clear();
     if (!_hasActiveChat) {
-      setState(() {
-        _hasActiveChat = true;
-      });
+      _hasActiveChat = true;
     }
+  });
 
-    // Clear the inputs immediately
-    setState(() {
-      _textController.clear();
-      _pendingFiles.clear();
-    });
+  try {
+    int? newSessionId;
 
-    _addMessage(
-      messageText.isEmpty ? (attachments.length == 1 ? "File sent" : "Files sent") : messageText,
-      true,
-      attachments.isNotEmpty ? attachments : null,
-    );
-
-    try {
-      if (attachments.isNotEmpty) {
-        for (var file in attachments) {
-          final responseData = await _apiService.storeFileMessage(
-            messageText,
-            file,
-            sessionId: _currentSessionId,
-          );
-          if (_currentSessionId == null) {
-            setState(() {
-              _currentSessionId = responseData['session_id'];
-            });
-          }
-        }
-      } else {
-        final responseData = await _apiService.storeTextMessage(
+    // This block sends the message(s) and creates the session if it's new
+    if (attachments.isNotEmpty) {
+      for (var file in attachments) {
+        final responseData = await _apiService.storeFileMessage(
           messageText,
+          file,
           sessionId: _currentSessionId,
         );
-        if (_currentSessionId == null) {
+        
+        // If a new session was just created, capture its ID and update state
+        if (isNewSession && _currentSessionId == null) {
+          newSessionId = responseData['session_id'];
           setState(() {
-            _currentSessionId = responseData['session_id'];
+            _currentSessionId = newSessionId;
           });
         }
       }
-
-      await _loadSessions();
-    } catch (e) {
-      _showSnackBar("Failed to send. Please try again.", Colors.red);
+    } else {
+      // This block handles text-only messages
+      final responseData = await _apiService.storeTextMessage(
+        messageText,
+        sessionId: _currentSessionId,
+      );
+      if (isNewSession) {
+        newSessionId = responseData['session_id'];
+        setState(() {
+          _currentSessionId = newSessionId;
+        });
+      }
     }
+
+    // CRITICAL FIX: If a new session was created, now we update its title.
+    // This happens *after* the session creation is confirmed.
+    if (isNewSession && newSessionId != null) {
+      try {
+        // Generate a title from the first message, with a fallback
+        String newTitle = messageText.isNotEmpty 
+          ? (messageText.length > 40 ? '${messageText.substring(0, 40)}...' : messageText)
+          : "Chat with Attachments";
+        
+        // Make the separate, guarded call to update the title
+        await _apiService.updateSessionTitle(newSessionId, newTitle);
+        
+      } catch (e) {
+        // This catch block handles the specific error from the screenshot.
+        // The chat can still proceed even if this fails.
+        _showSnackBar("Failed to update session name.", Colors.red);
+        print("Error caught while auto-updating session title: $e");
+      }
+    }
+
+    // Finally, refresh the list of sessions in the drawer
+    await _loadSessions();
+
+  } catch (e) {
+    // This catches general errors from sending the message.
+    _showSnackBar("Failed to send. Please try again.", Colors.red);
+    // Restore the user's text if sending failed
+    setState(() {
+      _textController.text = messageText;
+    });
   }
+}
+
 
   void _showPermissionDeniedDialog(String permission) {
     showDialog(
@@ -609,7 +724,8 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('$permission Permission Required'),
-          content: Text('Please grant $permission permission to use this feature.'),
+          content:
+              Text('Please grant $permission permission to use this feature.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -724,7 +840,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 enabled: false,
                 padding: EdgeInsets.zero,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: kEiraBackground,
                     borderRadius: BorderRadius.circular(12),
@@ -821,6 +938,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onNewSession: _startNewChat,
         sessions: _sessions,
         onSessionTapped: _onSessionTapped,
+        onSessionEdited: _editSessionTitle,
+        onSessionDeleted: _deleteSession,
       ),
       body: Stack(
         children: [
@@ -831,7 +950,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: _hasActiveChat
                 ? _isLoadingHistory
                     ? const Center(child: CircularProgressIndicator())
-                    : MessagesListView(messages: _messages, currentModel: _currentModel)
+                    : MessagesListView(
+                        messages: _messages, currentModel: _currentModel)
                 : WelcomeView(onCapabilityTap: () {}),
           ),
           Positioned(
@@ -917,7 +1037,8 @@ class ModelDropdown extends StatelessWidget {
               value: model,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                 decoration: BoxDecoration(
                   color: isSelected ? kEiraYellowLight : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
@@ -931,7 +1052,9 @@ class ModelDropdown extends StatelessWidget {
                         color: isSelected ? kEiraYellow : Colors.transparent,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: isSelected ? kEiraYellow : kEiraTextSecondary.withOpacity(0.3),
+                          color: isSelected
+                              ? kEiraYellow
+                              : kEiraTextSecondary.withOpacity(0.3),
                           width: 2,
                         ),
                       ),
@@ -942,7 +1065,8 @@ class ModelDropdown extends StatelessWidget {
                         model,
                         style: TextStyle(
                           color: isSelected ? kEiraYellow : kEiraText,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
                           fontSize: 14,
                           fontFamily: 'Roboto',
                         ),
@@ -951,7 +1075,8 @@ class ModelDropdown extends StatelessWidget {
                     ),
                     if (isSelected)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
                           color: kEiraYellow,
                           borderRadius: BorderRadius.circular(8),
@@ -1128,12 +1253,16 @@ class AppDrawer extends StatelessWidget {
   final VoidCallback onNewSession;
   final List<ChatSession> sessions;
   final Function(int) onSessionTapped;
+  final Future<void> Function(ChatSession) onSessionEdited;
+  final Future<bool> Function(int) onSessionDeleted;
 
   const AppDrawer({
     super.key,
     required this.onNewSession,
     required this.sessions,
     required this.onSessionTapped,
+    required this.onSessionEdited,
+    required this.onSessionDeleted,
   });
 
   @override
@@ -1148,11 +1277,13 @@ class AppDrawer extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onNewSession,
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text("New Session", style: TextStyle(color: Colors.white)),
+                label:
+                    const Text("New Session", style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kEiraYellow,
                   minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25)),
                 ),
               ),
             ),
@@ -1161,26 +1292,53 @@ class AppDrawer extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Recent Sessions", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                child: Text("Recent Sessions",
+                    style:
+                        TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
               ),
             ),
             const SizedBox(height: 10),
             Expanded(
               child: sessions.isEmpty
-                  ? const Center(child: Text("No recent sessions.", style: TextStyle(color: kEiraTextSecondary)))
+                  ? const Center(
+                      child: Text("No recent sessions.",
+                          style: TextStyle(color: kEiraTextSecondary)))
+                  // --- REPLACE THE OLD ListView.builder WITH THIS ---
                   : ListView.builder(
                       itemCount: sessions.length,
-                      // --- CORRECTION & CLARIFICATION ---
-                      // The `itemBuilder` expects a function with the signature:
-                      // `Widget Function(BuildContext, int)`
-                      // Your original code was correct, but we make the types explicit here
-                      // to prevent any analyzer confusion.
-                      itemBuilder: (BuildContext context, int index) {
-                        final ChatSession session = sessions[index];
-                        return ListTile(
-                          title: Text(session.title, style: const TextStyle(fontSize: 14)),
-                          subtitle: Text("Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
-                          onTap: () => onSessionTapped(session.id),
+                      itemBuilder: (context, index) {
+                        final session = sessions[index];
+                        // Use a Dismissible for swipe-to-delete functionality
+                        return Dismissible(
+                          key: ValueKey(session.id), // Unique key is crucial
+                          direction: DismissDirection.endToStart,
+                          // confirmDismiss is used to show a confirmation dialog
+                          confirmDismiss: (direction) async {
+                            return await onSessionDeleted(session.id);
+                          },
+                          background: Container(
+                            color: Colors.red.withOpacity(0.8),
+                            alignment: Alignment.centerRight,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 20.0),
+                            child: const Icon(Icons.delete, color: Colors.white),
+                          ),
+                          child: ListTile(
+                            title: Text(
+                              session.title,
+                              style: const TextStyle(fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                                "Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
+                            onTap: () => onSessionTapped(session.id),
+                            // Add a trailing edit button
+                            trailing: IconButton(
+                              icon: const Icon(Icons.edit_outlined,
+                                  size: 20, color: kEiraTextSecondary),
+                              onPressed: () => onSessionEdited(session),
+                            ),
+                          ),
                         );
                       },
                     ),
@@ -1272,7 +1430,6 @@ class WelcomeView extends StatelessWidget {
                   'color': const Color(0xFFEC4899),
                 },
               ];
-
               final card = cardsData[index];
               return CapabilityCard(
                 icon: card['icon'],
@@ -1376,7 +1533,8 @@ class MessagesListView extends StatelessWidget {
   final List<ChatMessage> messages;
   final String currentModel;
 
-  const MessagesListView({super.key, required this.messages, required this.currentModel});
+  const MessagesListView(
+      {super.key, required this.messages, required this.currentModel});
 
   @override
   Widget build(BuildContext context) {
@@ -1392,7 +1550,6 @@ class MessagesListView extends StatelessWidget {
         ),
       );
     }
-
     return ListView.builder(
       padding: const EdgeInsets.all(16.0),
       itemCount: messages.length,
@@ -1450,8 +1607,10 @@ class MessageBubble extends StatelessWidget {
           CircleAvatar(
             backgroundColor: isUser ? kEiraText : kEiraYellow,
             child: isUser
-                ? const Text("U", style: TextStyle(color: Colors.white, fontFamily: 'Roboto'))
-                : const Icon(Icons.health_and_safety, color: Colors.white, size: 20),
+                ? const Text("U",
+                    style: TextStyle(color: Colors.white, fontFamily: 'Roboto'))
+                : const Icon(Icons.health_and_safety,
+                    color: Colors.white, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1459,9 +1618,17 @@ class MessageBubble extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  Text(isUser ? "You" : modelName, style: TextStyle(fontWeight: FontWeight.bold, color: isUser ? kEiraText : kEiraYellowHover, fontFamily: 'Roboto')),
+                  Text(isUser ? "You" : modelName,
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isUser ? kEiraText : kEiraYellowHover,
+                          fontFamily: 'Roboto')),
                   const SizedBox(width: 8),
-                  Text(_formatTime(timestamp), style: const TextStyle(fontSize: 12, color: kEiraTextSecondary, fontFamily: 'Roboto')),
+                  Text(_formatTime(timestamp),
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: kEiraTextSecondary,
+                          fontFamily: 'Roboto')),
                 ]),
                 const SizedBox(height: 4),
                 if (text.isNotEmpty)
@@ -1530,7 +1697,8 @@ class RemoteAttachmentChip extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8.0),
       child: InkWell(
         onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Opening file: $fileName')));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('Opening file: $fileName')));
         },
         borderRadius: BorderRadius.circular(12),
         child: Container(
@@ -1593,7 +1761,8 @@ class AttachmentChip extends StatelessWidget {
                   children: [
                     Text(
                       fileName,
-                      style: const TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Roboto'),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w500, fontFamily: 'Roboto'),
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
@@ -1767,9 +1936,11 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                     controller: widget.textController,
                     decoration: const InputDecoration(
                       hintText: "Start typing a prompt",
-                      hintStyle: TextStyle(color: kEiraTextSecondary, fontFamily: 'Roboto'),
+                      hintStyle:
+                          TextStyle(color: kEiraTextSecondary, fontFamily: 'Roboto'),
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
                     ),
                     style: const TextStyle(fontFamily: 'Roboto'),
                     maxLines: null,
@@ -1916,10 +2087,13 @@ class VideoRecordingPreview extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red.shade400,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   ),
-                  child: const Text("Stop Recording", style: TextStyle(fontFamily: 'Roboto')),
+                  child:
+                      const Text("Stop Recording", style: TextStyle(fontFamily: 'Roboto')),
                 ),
                 const SizedBox(width: 16),
                 OutlinedButton(
@@ -1927,8 +2101,10 @@ class VideoRecordingPreview extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: kEiraText,
                     side: const BorderSide(color: kEiraBorder),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   ),
                   child: const Text("Close", style: TextStyle(fontFamily: 'Roboto')),
                 ),
@@ -1940,4 +2116,3 @@ class VideoRecordingPreview extends StatelessWidget {
     );
   }
 }
-
