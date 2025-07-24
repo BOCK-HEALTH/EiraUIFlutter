@@ -85,9 +85,6 @@ class EiraApp extends StatelessWidget {
   }
 }
 
-// In main.dart
-// <-- REPLACE your entire ChatMessage class with this corrected version -->
-
 class ChatMessage {
   final String text;
   final bool isUser;
@@ -105,9 +102,7 @@ class ChatMessage {
     this.fileType,
   }) : this.timestamp = timestamp ?? DateTime.now();
 
-  // THIS IS THE CORRECTED CONSTRUCTOR
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    // Get the raw data, which might be a List or null
     final fileUrlData = json['file_url'];
     final fileTypeData = json['file_type'];
 
@@ -115,19 +110,16 @@ class ChatMessage {
       text: json['message'] ?? '',
       isUser: json['sender'] == 'user',
       timestamp: DateTime.parse(json['created_at']),
-      
-      // Safely extract the first element if the data is a non-empty list.
-      // Otherwise, set it to null.
       fileUrl: (fileUrlData is List && fileUrlData.isNotEmpty)
           ? fileUrlData[0] as String?
           : null,
-          
       fileType: (fileTypeData is List && fileTypeData.isNotEmpty)
           ? fileTypeData[0] as String?
           : null,
     );
   }
 }
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -139,37 +131,31 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _hasActiveChat = false;
   final List<ChatMessage> _messages = [];
-  // Inside _HomeScreenState
-final List<ChatSession> _sessions = [];
-  // <-- NEW: State variable for current model
+  final List<ChatSession> _sessions = [];
   String _currentModel = 'Eira 0.1';
   final List<String> _availableModels = ['Eira 0.1', 'Eira 0.2', 'Eira 1'];
-  // <-- NEW: State variables for API communication
   final ApiService _apiService = ApiService();
   bool _isLoadingHistory = false;
-  // Inside _HomeScreenState
- int? _currentSessionId;
-  // Audio recording
+  int? _currentSessionId;
   late stt.SpeechToText _speech;
   bool _isListening = false;
   String _recognizedText = '';
   FlutterSoundRecorder? _audioRecorder;
   bool _isRecordingAudio = false;
   String? _audioPath;
-
-  // Video recording
   CameraController? _cameraController;
   Future<void>? _initializeCameraFuture;
   bool _isRecordingVideo = false;
   String? _videoPath;
   bool _isCameraInitialized = false;
-
   final List<File> _pendingFiles = [];
   final ImagePicker _picker = ImagePicker();
   final Dio _dio = Dio();
   final TextEditingController _textController = TextEditingController();
 
-  // <-- MODIFIED: initState now calls _loadChatHistory
+  // <-- NEW: Scroll controller to manage the ListView
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -177,59 +163,70 @@ final List<ChatSession> _sessions = [];
     _initializeSpeech();
     _initAudioRecorder();
     _initializeCamera();
-    _loadChatHistory(); // Load previous chats when the screen starts
-    _loadSessions(); 
+    _loadChatHistory();
+    _loadSessions();
   }
 
-  // <-- NEW: Method to handle model selection
+  // <-- NEW: Method to smoothly scroll to the bottom of the chat list
+  void _scrollToBottom() {
+    // We use a post-frame callback to ensure the scroll happens after the UI has been updated.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
   void _onModelChanged(String? newModel) {
     if (newModel != null && newModel != _currentModel) {
       setState(() {
         _currentModel = newModel;
       });
-      // You can add logic here to notify the backend about model change
       _showSnackBar('Switched to $newModel', kEiraYellow);
     }
   }
 
-Future<void> _loadSessions() async {
-  try {
-    final sessions = await _apiService.fetchSessions();
-    setState(() {
-      _sessions.clear();
-      _sessions.addAll(sessions);
-    });
-  } catch (e) {
-    _showSnackBar("Could not load sessions.", Colors.red);
+  Future<void> _loadSessions() async {
+    try {
+      final sessions = await _apiService.fetchSessions();
+      setState(() {
+        _sessions.clear();
+        _sessions.addAll(sessions);
+      });
+    } catch (e) {
+      _showSnackBar("Could not load sessions.", Colors.red);
+    }
   }
-}
 
-  // <-- NEW: Method to fetch all chat history from the backend
-  // <-- REPLACE this method -->
-Future<void> _loadChatHistory({int? sessionId}) async {
-  setState(() {
-    _isLoadingHistory = true;
-    _messages.clear(); // Clear old messages before loading new ones
-  });
-  try {
-    // Pass the sessionId to the service
-    final history = await _apiService.fetchMessages(sessionId: sessionId);
+  Future<void> _loadChatHistory({int? sessionId}) async {
     setState(() {
-      _messages.addAll(history);
-      _hasActiveChat = true; // Always true when loading a chat
-      // If we loaded a specific session, update our state
-      if (sessionId != null) {
-        _currentSessionId = sessionId;
-      }
+      _isLoadingHistory = true;
+      _messages.clear();
     });
-  } catch (e) {
-    _showSnackBar("Could not load chat history.", Colors.red);
-  } finally {
-    setState(() {
-      _isLoadingHistory = false;
-    });
+    try {
+      final history = await _apiService.fetchMessages(sessionId: sessionId);
+      setState(() {
+        _messages.addAll(history);
+        _hasActiveChat = true;
+        if (sessionId != null) {
+          _currentSessionId = sessionId;
+        }
+      });
+      // <-- MODIFIED: Scroll to bottom after loading history
+      _scrollToBottom();
+    } catch (e) {
+      _showSnackBar("Could not load chat history.", Colors.red);
+    } finally {
+      setState(() {
+        _isLoadingHistory = false;
+      });
+    }
   }
-}
+
   void _initializeSpeech() async {
     try {
       bool available = await _speech.initialize(
@@ -293,15 +290,15 @@ Future<void> _loadChatHistory({int? sessionId}) async {
   }
 
   void _startNewChat() {
-  setState(() {
-    _hasActiveChat = true;
-    _messages.clear();
-    _currentSessionId = null; // This is now officially a "new" chat
-  });
-  if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
-    Navigator.of(context).pop();
+    setState(() {
+      _hasActiveChat = true;
+      _messages.clear();
+      _currentSessionId = null;
+    });
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      Navigator.of(context).pop();
+    }
   }
-}
 
   Future<void> _requestPermissions() async {
     try {
@@ -499,6 +496,7 @@ Future<void> _loadChatHistory({int? sessionId}) async {
     }
   }
 
+  // <-- MODIFIED: This method now calls _scrollToBottom
   void _addMessage(String text, bool isUser, [List<File>? attachments]) {
     setState(() {
       _messages.add(ChatMessage(
@@ -510,6 +508,8 @@ Future<void> _loadChatHistory({int? sessionId}) async {
         _hasActiveChat = true;
       }
     });
+    // Scroll to the new message
+    _scrollToBottom();
   }
 
   void _removePendingFile(int index) {
@@ -534,74 +534,62 @@ Future<void> _loadChatHistory({int? sessionId}) async {
     }
   }
 
-  // <-- REPLACED: This is the new _sendMessage method connected to the backend
-  // In _HomeScreenState inside main.dart
-// <-- REPLACE your _sendMessage method with this corrected version -->
+  void _onSessionTapped(int sessionId) {
+    Navigator.of(context).pop();
+    _loadChatHistory(sessionId: sessionId);
+  }
 
-void _onSessionTapped(int sessionId) {
-  Navigator.of(context).pop();
-  _loadChatHistory(sessionId: sessionId);
-}
+  void _sendMessage() async {
+    final messageText = _textController.text.trim();
+    final attachments = List<File>.from(_pendingFiles);
 
+    if (messageText.isEmpty && attachments.isEmpty) return;
 
-void _sendMessage() async {
-  final messageText = _textController.text.trim();
-  final attachments = List<File>.from(_pendingFiles);
+    // Add user message to UI immediately
+    _addMessage(
+      messageText.isEmpty
+          ? (attachments.length == 1 ? "File sent" : "Files sent")
+          : messageText,
+      true,
+      attachments.isNotEmpty ? attachments : null,
+    );
+    
+    // Clear the inputs
+    setState(() {
+      _textController.clear();
+      _pendingFiles.clear();
+    });
 
-  if (messageText.isEmpty && attachments.isEmpty) return;
-
-  // Clear the inputs immediately
-  setState(() {
-    _textController.clear();
-    _pendingFiles.clear();
-  });
-
-  // Add a temporary message to the UI
-  _addMessage(
-    messageText.isEmpty ? (attachments.length == 1 ? "File sent" : "Files sent") : messageText,
-    true,
-    attachments.isNotEmpty ? attachments : null,
-  );
-
-  try {
-    // This logic now handles both text and file messages correctly
-    if (attachments.isNotEmpty) {
-      for (var file in attachments) {
-        // Pass the current session ID to the file upload method
-        final responseData = await _apiService.storeFileMessage(
+    try {
+      if (attachments.isNotEmpty) {
+        for (var file in attachments) {
+          final responseData = await _apiService.storeFileMessage(
+            messageText,
+            file,
+            sessionId: _currentSessionId,
+          );
+          if (_currentSessionId == null) {
+            setState(() {
+              _currentSessionId = responseData['session_id'];
+            });
+          }
+        }
+      } else {
+        final responseData = await _apiService.storeTextMessage(
           messageText,
-          file,
           sessionId: _currentSessionId,
         );
-        // If it was a new chat, update the current session ID
         if (_currentSessionId == null) {
           setState(() {
             _currentSessionId = responseData['session_id'];
           });
         }
       }
-    } else {
-      // Logic for text-only messages
-      final responseData = await _apiService.storeTextMessage(
-        messageText,
-        sessionId: _currentSessionId,
-      );
-      if (_currentSessionId == null) {
-        setState(() {
-          _currentSessionId = responseData['session_id'];
-        });
-      }
+      await _loadSessions();
+    } catch (e) {
+      _showSnackBar("Failed to send. Please try again.", Colors.red);
     }
-
-    // After any successful message, refresh the session list
-    await _loadSessions();
-
-  } catch (e) {
-    _showSnackBar("Failed to send. Please try again.", Colors.red);
-    // Here you could add logic to restore the message text and files to the input
   }
-}
-
 
   void _showPermissionDeniedDialog(String permission) {
     showDialog(
@@ -628,7 +616,6 @@ void _sendMessage() async {
       },
     );
   }
-  
 
   void _showErrorDialog(String message) {
     showDialog(
@@ -666,10 +653,11 @@ void _sendMessage() async {
     _cameraController?.dispose();
     _dio.close();
     _textController.dispose();
+    // <-- NEW: Dispose the scroll controller
+    _scrollController.dispose();
     super.dispose();
   }
 
-  // <-- MODIFIED: The build method now includes the model dropdown in the AppBar
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -680,13 +668,12 @@ void _sendMessage() async {
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
-        // <-- NEW: Added the model dropdown as the title
         title: ModelDropdown(
           currentModel: _currentModel,
           availableModels: _availableModels,
           onModelChanged: _onModelChanged,
         ),
-        centerTitle: true, // Center the dropdown
+        centerTitle: true,
         backgroundColor: kEiraBackground,
         elevation: 0,
         leading: Container(
@@ -823,18 +810,26 @@ void _sendMessage() async {
           ),
         ],
       ),
-      drawer: AppDrawer(onNewSession: _startNewChat, sessions: _sessions,onSessionTapped: _onSessionTapped),
+      drawer: AppDrawer(
+          onNewSession: _startNewChat,
+          sessions: _sessions,
+          onSessionTapped: _onSessionTapped),
       body: Stack(
         children: [
           Padding(
             padding: EdgeInsets.only(
-              bottom: _pendingFiles.isNotEmpty ? 140.0 : 100.0,
+              // Adjust bottom padding based on the presence of pending files and input area height
+              bottom: _pendingFiles.isNotEmpty ? 190.0 : 140.0,
             ),
-            // <-- MODIFIED: This section now shows a loading indicator while fetching history
             child: _hasActiveChat
                 ? _isLoadingHistory
                     ? const Center(child: CircularProgressIndicator())
-                    : MessagesListView(messages: _messages, currentModel: _currentModel)
+                    // <-- MODIFIED: Pass the scroll controller to the MessagesListView
+                    : MessagesListView(
+                        messages: _messages,
+                        currentModel: _currentModel,
+                        scrollController: _scrollController,
+                      )
                 : WelcomeView(onCapabilityTap: _startNewChat),
           ),
           Positioned(
@@ -919,7 +914,8 @@ class ModelDropdown extends StatelessWidget {
               value: model,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                 decoration: BoxDecoration(
                   color: isSelected ? kEiraYellowLight : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
@@ -933,7 +929,9 @@ class ModelDropdown extends StatelessWidget {
                         color: isSelected ? kEiraYellow : Colors.transparent,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: isSelected ? kEiraYellow : kEiraTextSecondary.withOpacity(0.3),
+                          color: isSelected
+                              ? kEiraYellow
+                              : kEiraTextSecondary.withOpacity(0.3),
                           width: 2,
                         ),
                       ),
@@ -944,7 +942,8 @@ class ModelDropdown extends StatelessWidget {
                         model,
                         style: TextStyle(
                           color: isSelected ? kEiraYellow : kEiraText,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
                           fontSize: 14,
                           fontFamily: 'Roboto',
                         ),
@@ -953,7 +952,8 @@ class ModelDropdown extends StatelessWidget {
                     ),
                     if (isSelected)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
                           color: kEiraYellow,
                           borderRadius: BorderRadius.circular(8),
@@ -1019,8 +1019,9 @@ class PendingFilesDisplay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 50, // Give it a fixed height
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
       decoration: BoxDecoration(
         color: kEiraBackground,
         border: Border(
@@ -1121,20 +1122,15 @@ class PendingFileChip extends StatelessWidget {
   }
 }
 
-// In main.dart
-// <-- REPLACE your entire AppDrawer class with this corrected version -->
-
 class AppDrawer extends StatelessWidget {
   final VoidCallback onNewSession;
   final List<ChatSession> sessions;
-  // <-- 1. ADD THIS NEW PROPERTY -->
   final Function(int) onSessionTapped;
 
   const AppDrawer({
     super.key,
     required this.onNewSession,
     required this.sessions,
-    // <-- 2. ADD THIS TO THE CONSTRUCTOR -->
     required this.onSessionTapped,
   });
 
@@ -1150,11 +1146,13 @@ class AppDrawer extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onNewSession,
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text("New Session", style: TextStyle(color: Colors.white)),
+                label: const Text("New Session",
+                    style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kEiraYellow,
                   minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25)),
                 ),
               ),
             ),
@@ -1163,29 +1161,31 @@ class AppDrawer extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Recent Sessions", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                child: Text("Recent Sessions",
+                    style:
+                        TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
               ),
             ),
             const SizedBox(height: 10),
-
-            // --- DYNAMIC SESSION LIST ---
             Expanded(
               child: sessions.isEmpty
-                  ? const Center(child: Text("No recent sessions.", style: TextStyle(color: kEiraTextSecondary)))
+                  ? const Center(
+                      child: Text("No recent sessions.",
+                          style: TextStyle(color: kEiraTextSecondary)))
                   : ListView.builder(
                       itemCount: sessions.length,
                       itemBuilder: (context, index) {
                         final session = sessions[index];
                         return ListTile(
-                          title: Text(session.title, style: const TextStyle(fontSize: 14)),
-                          subtitle: Text("Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
-                          // <-- 3. USE THE NEW CALLBACK HERE -->
+                          title: Text(session.title,
+                              style: const TextStyle(fontSize: 14)),
+                          subtitle: Text(
+                              "Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
                           onTap: () => onSessionTapped(session.id),
                         );
                       },
                     ),
             ),
-
             const Divider(color: kEiraBorder),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
@@ -1194,7 +1194,8 @@ class AppDrawer extends StatelessWidget {
                 await FirebaseAuth.instance.signOut();
                 if (context.mounted) {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const LoginScreen()),
                     (Route<dynamic> route) => false,
                   );
                 }
@@ -1378,11 +1379,18 @@ class CapabilityCard extends StatelessWidget {
   }
 }
 
+// <-- MODIFIED: This widget now accepts a ScrollController
 class MessagesListView extends StatelessWidget {
   final List<ChatMessage> messages;
   final String currentModel;
+  final ScrollController scrollController;
 
-  const MessagesListView({super.key, required this.messages, required this.currentModel});
+  const MessagesListView({
+    super.key,
+    required this.messages,
+    required this.currentModel,
+    required this.scrollController,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1399,6 +1407,8 @@ class MessagesListView extends StatelessWidget {
       );
     }
     return ListView.builder(
+      // <-- MODIFIED: Attach the controller here
+      controller: scrollController,
       padding: const EdgeInsets.all(16.0),
       itemCount: messages.length,
       itemBuilder: (context, index) {
@@ -1408,8 +1418,7 @@ class MessagesListView extends StatelessWidget {
           text: message.text,
           attachments: message.attachments,
           timestamp: message.timestamp,
-          modelName: currentModel, // Corrected from selectedModel to currentModel
-          // NEW: Pass the remote file data
+          modelName: currentModel,
           fileUrl: message.fileUrl,
           fileType: message.fileType,
         );
@@ -1424,7 +1433,6 @@ class MessageBubble extends StatelessWidget {
   final List<File>? attachments;
   final DateTime timestamp;
   final String modelName;
-  // NEW: Add fields from the updated ChatMessage model
   final String? fileUrl;
   final String? fileType;
 
@@ -1435,15 +1443,14 @@ class MessageBubble extends StatelessWidget {
     this.attachments,
     required this.timestamp,
     required this.modelName,
-    // NEW: Add to constructor
     this.fileUrl,
     this.fileType,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Determine if there is any file to display, either local or remote
-    final bool hasLocalAttachment = attachments != null && attachments!.isNotEmpty;
+    final bool hasLocalAttachment =
+        attachments != null && attachments!.isNotEmpty;
     final bool hasRemoteAttachment = fileUrl != null;
 
     return Container(
@@ -1459,8 +1466,10 @@ class MessageBubble extends StatelessWidget {
           CircleAvatar(
             backgroundColor: isUser ? kEiraText : kEiraYellow,
             child: isUser
-                ? const Text("U", style: TextStyle(color: Colors.white, fontFamily: 'Roboto'))
-                : const Icon(Icons.health_and_safety, color: Colors.white, size: 20),
+                ? const Text("U",
+                    style: TextStyle(color: Colors.white, fontFamily: 'Roboto'))
+                : const Icon(Icons.health_and_safety,
+                    color: Colors.white, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1468,21 +1477,28 @@ class MessageBubble extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  Text(isUser ? "You" : modelName, style: TextStyle(fontWeight: FontWeight.bold, color: isUser ? kEiraText : kEiraYellowHover, fontFamily: 'Roboto')),
+                  Text(isUser ? "You" : modelName,
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isUser ? kEiraText : kEiraYellowHover,
+                          fontFamily: 'Roboto')),
                   const SizedBox(width: 8),
-                  Text(_formatTime(timestamp), style: const TextStyle(fontSize: 12, color: kEiraTextSecondary, fontFamily: 'Roboto')),
+                  Text(_formatTime(timestamp),
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: kEiraTextSecondary,
+                          fontFamily: 'Roboto')),
                 ]),
                 const SizedBox(height: 4),
                 if (text.isNotEmpty)
-                  Text(text, style: const TextStyle(height: 1.5, fontFamily: 'Roboto')),
-                // Display attachment chips
+                  Text(text,
+                      style: const TextStyle(height: 1.5, fontFamily: 'Roboto')),
                 if (hasLocalAttachment) ...[
                   const SizedBox(height: 10),
                   ...attachments!.map((file) => AttachmentChip(file: file)),
                 ],
                 if (hasRemoteAttachment) ...[
                   const SizedBox(height: 10),
-                  // We can reuse the AttachmentChip logic by passing a name and type
                   RemoteAttachmentChip(fileUrl: fileUrl!, fileType: fileType),
                 ]
               ],
@@ -1498,15 +1514,13 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
-// NEW: Create a widget specifically for displaying remote attachments
-
 class RemoteAttachmentChip extends StatelessWidget {
   final String fileUrl;
   final String? fileType;
 
-  const RemoteAttachmentChip({super.key, required this.fileUrl, this.fileType});
+  const RemoteAttachmentChip(
+      {super.key, required this.fileUrl, this.fileType});
 
-  // Helper to get an icon from a MIME type
   IconData _getIconForMimeType(String? mimeType) {
     if (mimeType == null) return Icons.insert_drive_file;
     if (mimeType.startsWith('image/')) return Icons.image;
@@ -1516,32 +1530,20 @@ class RemoteAttachmentChip extends StatelessWidget {
     return Icons.insert_drive_file;
   }
 
-  // --- THIS IS THE NEW, SAFE FILENAME PARSER ---
   String _getCleanFileName(String url) {
     try {
-      // 1. Decode the URL to handle any special characters (like %20 for spaces)
       final decodedUrl = Uri.decodeComponent(url);
-      
-      // 2. Find the last '/' to get the full filename part
       final lastSlashIndex = decodedUrl.lastIndexOf('/');
       if (lastSlashIndex == -1) {
-        // If there's no slash, return the whole decoded url as a fallback
         return decodedUrl;
       }
       final fullFileName = decodedUrl.substring(lastSlashIndex + 1);
-
-      // 3. Find the first '_' to remove the timestamp prefix
       final firstUnderscoreIndex = fullFileName.indexOf('_');
       if (firstUnderscoreIndex == -1) {
-        // If there's no underscore (unexpected), return the full name as a fallback
         return fullFileName;
       }
-      
-      // 4. Return the part after the first underscore
       return fullFileName.substring(firstUnderscoreIndex + 1);
-
     } catch (e) {
-      // If any part of the parsing fails, return a safe fallback string
       print("Error parsing filename: $e");
       return "Attachment";
     }
@@ -1549,7 +1551,6 @@ class RemoteAttachmentChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Use the new, safe method to get the filename
     final fileName = _getCleanFileName(fileUrl);
     final icon = _getIconForMimeType(fileType);
 
@@ -1557,8 +1558,8 @@ class RemoteAttachmentChip extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8.0),
       child: InkWell(
         onTap: () {
-          // You can use the url_launcher package here to open the fileUrl
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Opening file: $fileName')));
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Opening file: $fileName')));
         },
         borderRadius: BorderRadius.circular(12),
         child: Container(
@@ -1771,7 +1772,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20.0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       decoration: BoxDecoration(
         color: kEiraBackground,
         border: Border(top: BorderSide(color: kEiraBorder.withOpacity(0.3))),
@@ -1831,7 +1832,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1969,8 +1970,8 @@ class VideoRecordingPreview extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 20, vertical: 12),
                   ),
-                  child:
-                      const Text("Close", style: TextStyle(fontFamily: 'Roboto')),
+                  child: const Text("Close",
+                      style: TextStyle(fontFamily: 'Roboto')),
                 ),
               ],
             ),
