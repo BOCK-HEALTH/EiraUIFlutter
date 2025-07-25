@@ -980,46 +980,53 @@ class _HomeScreenState extends State<HomeScreen> {
         onSessionDeleted: _deleteSession,
       ),
       body: Stack(
+  children: [
+    // Main content area
+    Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: _pendingFiles.isNotEmpty ? 180.0 : 140.0, // Increased padding
+      child: _hasActiveChat
+          ? _isLoadingHistory
+              ? const Center(child: CircularProgressIndicator())
+              : MessagesListView(
+                  messages: _messages, 
+                  currentModel: _currentModel,
+                  // Add extra bottom padding to the ListView itself
+                  extraBottomPadding: 20.0,
+                )
+          : WelcomeView(onCapabilityTap: () {}),
+    ),
+    // Input area
+    Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-              bottom: _pendingFiles.isNotEmpty ? 140.0 : 100.0,
+          if (_pendingFiles.isNotEmpty)
+            PendingFilesDisplay(
+              files: _pendingFiles,
+              onRemove: _removePendingFile,
             ),
-            child: _hasActiveChat
-                ? _isLoadingHistory
-                    ? const Center(child: CircularProgressIndicator())
-                    : MessagesListView(
-                        messages: _messages, currentModel: _currentModel)
-                : WelcomeView(onCapabilityTap: () {}),
-          ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_pendingFiles.isNotEmpty)
-                  PendingFilesDisplay(
-                    files: _pendingFiles,
-                    onRemove: _removePendingFile,
-                  ),
-                ChatInputArea(
-                  isRecordingAudio: _isRecordingAudio,
-                  isRecordingVideo: _isRecordingVideo,
-                  recognizedText: _recognizedText,
-                  textController: _textController,
-                  onRecordToggle: _toggleRecording,
-                  onFileAdd: _pickFiles,
-                  onCameraOpen: _toggleVideoRecording,
-                  onSendMessage: _sendMessage,
-                  hasPendingFiles: _pendingFiles.isNotEmpty,
-                ),
-              ],
-            ),
+          ChatInputArea(
+            isRecordingAudio: _isRecordingAudio,
+            isRecordingVideo: _isRecordingVideo,
+            recognizedText: _recognizedText,
+            textController: _textController,
+            onRecordToggle: _toggleRecording,
+            onFileAdd: _pickFiles,
+            onCameraOpen: _toggleVideoRecording,
+            onSendMessage: _sendMessage,
+            hasPendingFiles: _pendingFiles.isNotEmpty,
           ),
         ],
       ),
+    ),
+  ],
+),
     );
   }
 }
