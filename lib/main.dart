@@ -942,46 +942,53 @@ void _sendMessage() async {
         onSessionDeleted: _deleteSession,
       ),
       body: Stack(
+  children: [
+    // Main content area
+    Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: _pendingFiles.isNotEmpty ? 180.0 : 140.0, // Increased padding
+      child: _hasActiveChat
+          ? _isLoadingHistory
+              ? const Center(child: CircularProgressIndicator())
+              : MessagesListView(
+                  messages: _messages, 
+                  currentModel: _currentModel,
+                  // Add extra bottom padding to the ListView itself
+                  extraBottomPadding: 20.0,
+                )
+          : WelcomeView(onCapabilityTap: () {}),
+    ),
+    // Input area
+    Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-              bottom: _pendingFiles.isNotEmpty ? 140.0 : 100.0,
+          if (_pendingFiles.isNotEmpty)
+            PendingFilesDisplay(
+              files: _pendingFiles,
+              onRemove: _removePendingFile,
             ),
-            child: _hasActiveChat
-                ? _isLoadingHistory
-                    ? const Center(child: CircularProgressIndicator())
-                    : MessagesListView(
-                        messages: _messages, currentModel: _currentModel)
-                : WelcomeView(onCapabilityTap: () {}),
-          ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_pendingFiles.isNotEmpty)
-                  PendingFilesDisplay(
-                    files: _pendingFiles,
-                    onRemove: _removePendingFile,
-                  ),
-                ChatInputArea(
-                  isRecordingAudio: _isRecordingAudio,
-                  isRecordingVideo: _isRecordingVideo,
-                  recognizedText: _recognizedText,
-                  textController: _textController,
-                  onRecordToggle: _toggleRecording,
-                  onFileAdd: _pickFiles,
-                  onCameraOpen: _toggleVideoRecording,
-                  onSendMessage: _sendMessage,
-                  hasPendingFiles: _pendingFiles.isNotEmpty,
-                ),
-              ],
-            ),
+          ChatInputArea(
+            isRecordingAudio: _isRecordingAudio,
+            isRecordingVideo: _isRecordingVideo,
+            recognizedText: _recognizedText,
+            textController: _textController,
+            onRecordToggle: _toggleRecording,
+            onFileAdd: _pickFiles,
+            onCameraOpen: _toggleVideoRecording,
+            onSendMessage: _sendMessage,
+            hasPendingFiles: _pendingFiles.isNotEmpty,
           ),
         ],
       ),
+    ),
+  ],
+),
     );
   }
 }
@@ -1547,16 +1554,64 @@ class CapabilityCard extends StatelessWidget {
   }
 }
 
-class MessagesListView extends StatelessWidget {
+class MessagesListView extends StatefulWidget {
   final List<ChatMessage> messages;
   final String currentModel;
+  final double extraBottomPadding;
 
-  const MessagesListView(
-      {super.key, required this.messages, required this.currentModel});
+  const MessagesListView({
+    super.key, 
+    required this.messages, 
+    required this.currentModel,
+    this.extraBottomPadding = 0.0,
+  });
+
+  @override
+  State<MessagesListView> createState() => _MessagesListViewState();
+}
+
+class _MessagesListViewState extends State<MessagesListView> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Scroll to bottom when widget is first created
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottom();
+    });
+  }
+
+  @override
+  void didUpdateWidget(MessagesListView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Scroll to bottom when new messages are added
+    if (widget.messages.length > oldWidget.messages.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom();
+      });
+    }
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (messages.isEmpty) {
+    if (widget.messages.isEmpty) {
       return const Center(
         child: Text(
           'Start a conversation...',
@@ -1569,16 +1624,22 @@ class MessagesListView extends StatelessWidget {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.all(16.0),
-      itemCount: messages.length,
+      controller: _scrollController,
+      padding: EdgeInsets.only(
+        left: 16.0,
+        right: 16.0,
+        top: 16.0,
+        bottom: 16.0 + widget.extraBottomPadding, // Add extra bottom padding
+      ),
+      itemCount: widget.messages.length,
       itemBuilder: (context, index) {
-        final message = messages[index];
+        final message = widget.messages[index];
         return MessageBubble(
           isUser: message.isUser,
           text: message.text,
           attachments: message.attachments,
           timestamp: message.timestamp,
-          modelName: currentModel,
+          modelName: widget.currentModel,
           fileUrl: message.fileUrl,
           fileType: message.fileType,
         );
