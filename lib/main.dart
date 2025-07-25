@@ -1303,16 +1303,14 @@ class AppDrawer extends StatelessWidget {
                   ? const Center(
                       child: Text("No recent sessions.",
                           style: TextStyle(color: kEiraTextSecondary)))
-                  // --- REPLACE THE OLD ListView.builder WITH THIS ---
+                  // --- MODIFIED: Replaced ListView.builder with a version that includes a PopupMenuButton ---
                   : ListView.builder(
                       itemCount: sessions.length,
                       itemBuilder: (context, index) {
                         final session = sessions[index];
-                        // Use a Dismissible for swipe-to-delete functionality
                         return Dismissible(
-                          key: ValueKey(session.id), // Unique key is crucial
+                          key: ValueKey(session.id),
                           direction: DismissDirection.endToStart,
-                          // confirmDismiss is used to show a confirmation dialog
                           confirmDismiss: (direction) async {
                             return await onSessionDeleted(session.id);
                           },
@@ -1332,11 +1330,31 @@ class AppDrawer extends StatelessWidget {
                             subtitle: Text(
                                 "Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
                             onTap: () => onSessionTapped(session.id),
-                            // Add a trailing edit button
-                            trailing: IconButton(
-                              icon: const Icon(Icons.edit_outlined,
-                                  size: 20, color: kEiraTextSecondary),
-                              onPressed: () => onSessionEdited(session),
+                            trailing: PopupMenuButton<String>(
+                              onSelected: (value) {
+                                if (value == 'rename') {
+                                  onSessionEdited(session);
+                                } else if (value == 'delete') {
+                                  onSessionDeleted(session.id);
+                                }
+                              },
+                              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                                const PopupMenuItem<String>(
+                                  value: 'rename',
+                                  child: ListTile(
+                                    leading: Icon(Icons.edit_outlined, size: 20),
+                                    title: Text('Rename'),
+                                  ),
+                                ),
+                                const PopupMenuItem<String>(
+                                  value: 'delete',
+                                  child: ListTile(
+                                    leading: Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                                    title: Text('Delete', style: TextStyle(color: Colors.red)),
+                                  ),
+                                ),
+                              ],
+                              icon: const Icon(Icons.more_vert, color: kEiraTextSecondary, size: 20),
                             ),
                           ),
                         );

@@ -40,6 +40,7 @@ class ApiService {
     return await user.getIdToken();
   }
 
+  // --- MODIFIED: Corrected the endpoint and data payload ---
   Future<void> updateSessionTitle(int sessionId, String newTitle) async {
     try {
       final token = await _getIdToken();
@@ -49,9 +50,14 @@ class ApiService {
 
       print('Attempting to update session $sessionId with title: "$newTitle"');
       
+      // The endpoint likely follows the pattern of your other APIs (e.g., /api/updateSession)
+      // We also send the sessionId in the body of the request.
       final response = await _dio.put(
-        '$_baseUrl/api/sessions/$sessionId',
-        data: {'title': newTitle},
+        '$_baseUrl/api/updateSession', // CORRECTED ENDPOINT
+        data: {
+          'sessionId': sessionId,
+          'title': newTitle
+        },
         options: Options(
           headers: {
             'Authorization': 'Bearer $token',
@@ -73,6 +79,7 @@ class ApiService {
   }
 
   /// Deletes a specific session.
+  // --- MODIFIED: Corrected the endpoint and data payload ---
   Future<void> deleteSession(int sessionId) async {
     try {
       final token = await _getIdToken();
@@ -82,11 +89,15 @@ class ApiService {
 
       print('Attempting to delete session $sessionId');
       
+      // The endpoint likely follows the pattern of your other APIs (e.g., /api/deleteSession)
+      // We are sending the sessionId in the request body.
       final response = await _dio.delete(
-        '$_baseUrl/api/sessions/$sessionId',
+        '$_baseUrl/api/deleteSession', // CORRECTED ENDPOINT
+        data: { 'sessionId': sessionId }, // Pass the ID in the body
         options: Options(
           headers: {
             'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json', // Required for sending data
           },
         ),
       );
