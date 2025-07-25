@@ -141,7 +141,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   bool _hasActiveChat = false;
-  // --- Using a final list is correct. It prevents accidental reassignmen
   final List<ChatMessage> _messages = [];
   final List<ChatSession> _sessions = [];
 
@@ -175,34 +174,35 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-
-     if (!kIsWeb) { 
-    _speech = stt.SpeechToText();
-    _initializeSpeech();
-    _initAudioRecorder();
-    _initializeCamera();
-  }
     _loadSessions();
+
+    // Prevent mobile-only plugins from running on web
+    if (!kIsWeb) {
+      _speech = stt.SpeechToText();
+      _initializeSpeech();
+      _initAudioRecorder();
+      _initializeCamera();
+    }
   }
 
-  // --- CORRECT PATTERN: Use .clear() and .addAll() to modify a final list ---
-  // This avoids both the "final" error and any potential type mismatches from assignment.
+  // --- ADDING MOUNTED CHECKS ---
+
   Future<void> _loadSessions() async {
     try {
-      // CORRECTION:
-      // The error says the value from the right side is a 'List<ChatSession>'.
-      // To fix this, we declare the variable 'sessions' to be the exact same type.
       final List<ChatSession> sessions = await _apiService.fetchSessions();
-      setState(() {
-        _sessions.clear();
-        // The addAll method still works perfectly because it can accept a List.
-        _sessions.addAll(sessions);
-      });
+      // CRITICAL FIX: Check if the widget is still mounted before calling setState
+      if (mounted) {
+        setState(() {
+          _sessions.clear();
+          _sessions.addAll(sessions);
+        });
+      }
     } catch (e) {
-      // Added more specific error logging to help debug if it continues.
       print("Error in _loadSessions: $e");
       print("Runtime type of error: ${e.runtimeType}");
-      _showSnackBar("Could not load sessions.", Colors.red);
+      if (mounted) {
+        _showSnackBar("Could not load sessions.", Colors.red);
+      }
     }
   }
 
@@ -234,28 +234,29 @@ class _HomeScreenState extends State<HomeScreen> {
       if (newTitle.isNotEmpty && newTitle != session.title) {
         try {
           await _apiService.updateSessionTitle(session.id, newTitle);
+          if (mounted) {
+            setState(() {
+              final index = _sessions.indexWhere((s) => s.id == session.id);
+              if (index != -1) {
+                _sessions[index] = ChatSession(
+                  id: session.id,
 
-          // To update the UI, we must replace the object in the list
-          setState(() {
-            final index = _sessions.indexWhere((s) => s.id == session.id);
-            if (index != -1) {
-              // Create a new session object with the updated title
-              _sessions[index] = ChatSession(
-                id: session.id,
-                title: newTitle,
-                createdAt: session.createdAt,
-              );
-            }
-          });
-          _showSnackBar('Session name updated!', kEiraYellow);
+                  title: newTitle,
+                  createdAt: session.createdAt,
+                );
+              }
+            });
+            _showSnackBar('Session name updated!', kEiraYellow);
+          }
         } catch (e) {
-          _showSnackBar('Failed to update session name.', Colors.red);
+          if (mounted) {
+            _showSnackBar('Failed to update session name.', Colors.red);
+          }
         }
       }
     }
   }
 
-  /// Shows a confirmation dialog and deletes a session.
   Future<bool> _deleteSession(int sessionId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -278,58 +279,72 @@ class _HomeScreenState extends State<HomeScreen> {
     if (confirmed == true) {
       try {
         await _apiService.deleteSession(sessionId);
-        setState(() {
-          _sessions.removeWhere((s) => s.id == sessionId);
-          // If the deleted session was the active one, start a new chat view
-          if (_currentSessionId == sessionId) {
-            _startNewChat();
-          }
-        });
-        _showSnackBar('Session deleted.', kEiraYellow);
+        if (mounted) {
+          setState(() {
+            _sessions.removeWhere((s) => s.id == sessionId);
+            if (_currentSessionId == sessionId) {
+              _startNewChat();
+            }
+          });
+          _showSnackBar('Session deleted.', kEiraYellow);
+        }
         return true;
       } catch (e) {
-        _showSnackBar('Failed to delete session.', Colors.red);
+        if (mounted) {
+          _showSnackBar('Failed to delete session.', Colors.red);
+        }
         return false;
       }
     }
-    return false; // User cancelled
+    return false;
   }
 
   Future<void> _loadChatHistory({int? sessionId}) async {
-    setState(() {
-      _isLoadingHistory = true;
-      _messages.clear();
-    });
+    if (mounted) {
+      setState(() {
+        _isLoadingHistory = true;
+        _messages.clear();
+      });
+    }
 
     try {
       final List<ChatMessage> history =
           await _apiService.fetchMessages(sessionId: sessionId);
-      setState(() {
-        _messages.addAll(history);
-        _hasActiveChat = true;
-        if (sessionId != null) {
-          _currentSessionId = sessionId;
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _messages.addAll(history);
+          _hasActiveChat = true;
+          if (sessionId != null) {
+            _currentSessionId = sessionId;
+          }
+        });
+      }
     } catch (e) {
-      _showSnackBar("Could not load chat history.", Colors.red);
+      if (mounted) {
+        _showSnackBar("Could not load chat history.", Colors.red);
+      }
     } finally {
-      setState(() {
-        _isLoadingHistory = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingHistory = false;
+        });
+      }
     }
   }
 
   void _onModelChanged(String? newModel) {
     if (newModel != null && newModel != _currentModel) {
-      setState(() {
-        _currentModel = newModel;
-      });
-      _showSnackBar('Switched to $newModel', kEiraYellow);
+      if (mounted) {
+        setState(() {
+          _currentModel = newModel;
+        });
+        _showSnackBar('Switched to $newModel', kEiraYellow);
+      }
     }
   }
 
   void _initializeSpeech() async {
+    // This function doesn't call setState, so it's safe
     try {
       bool available = await _speech.initialize(
         onStatus: (val) => print('Speech status: $val'),
@@ -346,6 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _initAudioRecorder() async {
+    // This function doesn't call setState, so it's safe
     try {
       _audioRecorder = FlutterSoundRecorder();
       await _audioRecorder!.openRecorder();
@@ -394,11 +410,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startNewChat() {
-    setState(() {
-      _hasActiveChat = false;
-      _messages.clear();
-      _currentSessionId = null;
-    });
+    if (mounted) {
+      setState(() {
+        _hasActiveChat = false;
+        _messages.clear();
+        _currentSessionId = null;
+      });
+    }
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
       Navigator.of(context).pop();
     }
@@ -435,18 +453,22 @@ class _HomeScreenState extends State<HomeScreen> {
           toFile: filePath,
           codec: Codec.pcm16WAV,
         );
-        setState(() {
-          _isRecordingAudio = true;
-          _audioPath = filePath;
-          _recognizedText = '';
-        });
+        if (mounted) {
+          setState(() {
+            _isRecordingAudio = true;
+            _audioPath = filePath;
+            _recognizedText = '';
+          });
+        }
         if (_speech.isAvailable) {
           await _speech.listen(
             onResult: (result) {
-              setState(() {
-                _recognizedText = result.recognizedWords;
-                _textController.text = _recognizedText;
-              });
+              if (mounted) {
+                setState(() {
+                  _recognizedText = result.recognizedWords;
+                  _textController.text = _recognizedText;
+                });
+              }
             },
             listenFor: const Duration(minutes: 5),
             pauseFor: const Duration(seconds: 3),
@@ -466,15 +488,19 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       if (_audioRecorder != null && _isRecordingAudio) {
         String? recordedPath = await _audioRecorder!.stopRecorder();
-        setState(() {
-          _isRecordingAudio = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isRecordingAudio = false;
+          });
+        }
         if (recordedPath != null && File(recordedPath).existsSync()) {
           final file = File(recordedPath);
-          setState(() {
-            _pendingFiles.add(file);
-          });
-          _showSnackBar('Audio recorded! Press send to share.', Colors.green);
+          if (mounted) {
+            setState(() {
+              _pendingFiles.add(file);
+            });
+            _showSnackBar('Audio recorded! Press send to share.', Colors.green);
+          }
         }
       }
     } catch (e) {
@@ -498,10 +524,12 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       if (_cameraController != null && _cameraController!.value.isInitialized) {
         await _cameraController!.startVideoRecording();
-        setState(() {
-          _isRecordingVideo = true;
-        });
-        _showSnackBar('Video recording started...', Colors.green);
+        if (mounted) {
+          setState(() {
+            _isRecordingVideo = true;
+          });
+          _showSnackBar('Video recording started...', Colors.green);
+        }
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -533,9 +561,11 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       if (_cameraController != null && _isRecordingVideo) {
         final XFile tempFile = await _cameraController!.stopVideoRecording();
-        setState(() {
-          _isRecordingVideo = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isRecordingVideo = false;
+          });
+        }
         final File originalFile = File(tempFile.path);
         final Directory directory = await getTemporaryDirectory();
         final String newPath = path.join(
@@ -544,10 +574,12 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         final File newFile = await originalFile.rename(newPath);
         if (newFile.existsSync()) {
-          setState(() {
-            _pendingFiles.add(newFile);
-          });
-          _showSnackBar('Video recorded! Press send to share.', Colors.green);
+          if (mounted) {
+            setState(() {
+              _pendingFiles.add(newFile);
+            });
+            _showSnackBar('Video recorded! Press send to share.', Colors.green);
+          }
         } else {
           _showErrorDialog('Failed to save the recorded video file.');
         }
@@ -581,12 +613,14 @@ class _HomeScreenState extends State<HomeScreen> {
             .where((file) => file.existsSync())
             .toList();
         if (files.isNotEmpty) {
-          setState(() {
-            _pendingFiles.addAll(files);
-          });
-          _showSnackBar(
-              '${files.length} file(s) added. Press send to share.',
-              Colors.green);
+          if (mounted) {
+            setState(() {
+              _pendingFiles.addAll(files);
+            });
+            _showSnackBar(
+                '${files.length} file(s) added. Press send to share.',
+                Colors.green);
+          }
         }
       }
     } catch (e) {
@@ -595,22 +629,26 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _addMessage(String text, bool isUser, [List<File>? attachments]) {
-    setState(() {
-      _messages.add(ChatMessage(
-        text: text,
-        isUser: isUser,
-        attachments: attachments,
-      ));
-      if (!_hasActiveChat) {
-        _hasActiveChat = true;
-      }
-    });
+    if (mounted) {
+      setState(() {
+        _messages.add(ChatMessage(
+          text: text,
+          isUser: isUser,
+          attachments: attachments,
+        ));
+        if (!_hasActiveChat) {
+          _hasActiveChat = true;
+        }
+      });
+    }
   }
 
   void _removePendingFile(int index) {
-    setState(() {
-      _pendingFiles.removeAt(index);
-    });
+    if (mounted) {
+      setState(() {
+        _pendingFiles.removeAt(index);
+      });
+    }
   }
 
   Future<void> _toggleRecording() async {
@@ -630,104 +668,97 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onSessionTapped(int sessionId) {
-    Navigator.of(context).pop(); // Close drawer
-    _loadChatHistory(sessionId: sessionId); // Load the specific session
+    Navigator.of(context).pop();
+    _loadChatHistory(sessionId: sessionId);
   }
 
-  // lib/main.dart
+  void _sendMessage() async {
+    final messageText = _textController.text.trim();
+    final attachments = List<File>.from(_pendingFiles);
 
-// REPLACE the entire _sendMessage function with this new version.
-void _sendMessage() async {
-  final messageText = _textController.text.trim();
-  final attachments = List<File>.from(_pendingFiles);
+    if (messageText.isEmpty && attachments.isEmpty) return;
 
-  if (messageText.isEmpty && attachments.isEmpty) return;
+    final bool isNewSession = _currentSessionId == null;
 
-  // Check if this is a new chat before sending the message
-  final bool isNewSession = _currentSessionId == null;
-
-  // Immediately update the UI for a responsive feel
-  _addMessage(
-    messageText.isEmpty
-        ? (attachments.length == 1 ? "File sent" : "Files sent")
-        : messageText,
-    true,
-    attachments.isNotEmpty ? attachments : null,
-  );
-  setState(() {
-    _textController.clear();
-    _pendingFiles.clear();
-    if (!_hasActiveChat) {
-      _hasActiveChat = true;
+    _addMessage(
+      messageText.isEmpty
+          ? (attachments.length == 1 ? "File sent" : "Files sent")
+          : messageText,
+      true,
+      attachments.isNotEmpty ? attachments : null,
+    );
+    if (mounted) {
+      setState(() {
+        _textController.clear();
+        _pendingFiles.clear();
+        if (!_hasActiveChat) {
+          _hasActiveChat = true;
+        }
+      });
     }
-  });
 
-  try {
-    int? newSessionId;
+    try {
+      int? newSessionId;
 
-    // This block sends the message(s) and creates the session if it's new
-    if (attachments.isNotEmpty) {
-      for (var file in attachments) {
-        final responseData = await _apiService.storeFileMessage(
+      if (attachments.isNotEmpty) {
+        for (var file in attachments) {
+          final responseData = await _apiService.storeFileMessage(
+            messageText,
+            file,
+            sessionId: _currentSessionId,
+          );
+          
+          if (isNewSession && _currentSessionId == null) {
+            newSessionId = responseData['session_id'];
+            if (mounted) {
+              setState(() {
+                _currentSessionId = newSessionId;
+              });
+            }
+          }
+        }
+      } else {
+        final responseData = await _apiService.storeTextMessage(
           messageText,
-          file,
           sessionId: _currentSessionId,
         );
-        
-        // If a new session was just created, capture its ID and update state
-        if (isNewSession && _currentSessionId == null) {
+        if (isNewSession) {
           newSessionId = responseData['session_id'];
-          setState(() {
-            _currentSessionId = newSessionId;
-          });
+          if (mounted) {
+            setState(() {
+              _currentSessionId = newSessionId;
+            });
+          }
         }
       }
-    } else {
-      // This block handles text-only messages
-      final responseData = await _apiService.storeTextMessage(
-        messageText,
-        sessionId: _currentSessionId,
-      );
-      if (isNewSession) {
-        newSessionId = responseData['session_id'];
+
+      if (isNewSession && newSessionId != null) {
+        try {
+          String newTitle = messageText.isNotEmpty 
+            ? (messageText.length > 40 ? '${messageText.substring(0, 40)}...' : messageText)
+            : "Chat with Attachments";
+          
+          await _apiService.updateSessionTitle(newSessionId, newTitle);
+          
+        } catch (e) {
+          if (mounted) {
+            _showSnackBar("Failed to update session name.", Colors.red);
+          }
+          print("Error caught while auto-updating session title: $e");
+        }
+      }
+
+      await _loadSessions();
+
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar("Failed to send. Please try again.", Colors.red);
         setState(() {
-          _currentSessionId = newSessionId;
+          _textController.text = messageText;
         });
       }
     }
-
-    // CRITICAL FIX: If a new session was created, now we update its title.
-    // This happens *after* the session creation is confirmed.
-    if (isNewSession && newSessionId != null) {
-      try {
-        // Generate a title from the first message, with a fallback
-        String newTitle = messageText.isNotEmpty 
-          ? (messageText.length > 40 ? '${messageText.substring(0, 40)}...' : messageText)
-          : "Chat with Attachments";
-        
-        // Make the separate, guarded call to update the title
-        await _apiService.updateSessionTitle(newSessionId, newTitle);
-        
-      } catch (e) {
-        // This catch block handles the specific error from the screenshot.
-        // The chat can still proceed even if this fails.
-        _showSnackBar("Failed to update session name.", Colors.red);
-        print("Error caught while auto-updating session title: $e");
-      }
-    }
-
-    // Finally, refresh the list of sessions in the drawer
-    await _loadSessions();
-
-  } catch (e) {
-    // This catches general errors from sending the message.
-    _showSnackBar("Failed to send. Please try again.", Colors.red);
-    // Restore the user's text if sending failed
-    setState(() {
-      _textController.text = messageText;
-    });
   }
-}
 
 
   void _showPermissionDeniedDialog(String permission) {
@@ -838,12 +869,7 @@ void _sendMessage() async {
             onSelected: (value) async {
               if (value == 'logout') {
                 await FirebaseAuth.instance.signOut();
-                if (context.mounted) {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
-                    (Route<dynamic> route) => false,
-                  );
-                }
+                // No need for context checks after signout, StreamBuilder handles it
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -954,53 +980,46 @@ void _sendMessage() async {
         onSessionDeleted: _deleteSession,
       ),
       body: Stack(
-  children: [
-    // Main content area
-    Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: _pendingFiles.isNotEmpty ? 180.0 : 140.0, // Increased padding
-      child: _hasActiveChat
-          ? _isLoadingHistory
-              ? const Center(child: CircularProgressIndicator())
-              : MessagesListView(
-                  messages: _messages, 
-                  currentModel: _currentModel,
-                  // Add extra bottom padding to the ListView itself
-                  extraBottomPadding: 20.0,
-                )
-          : WelcomeView(onCapabilityTap: () {}),
-    ),
-    // Input area
-    Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          if (_pendingFiles.isNotEmpty)
-            PendingFilesDisplay(
-              files: _pendingFiles,
-              onRemove: _removePendingFile,
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: _pendingFiles.isNotEmpty ? 140.0 : 100.0,
             ),
-          ChatInputArea(
-            isRecordingAudio: _isRecordingAudio,
-            isRecordingVideo: _isRecordingVideo,
-            recognizedText: _recognizedText,
-            textController: _textController,
-            onRecordToggle: _toggleRecording,
-            onFileAdd: _pickFiles,
-            onCameraOpen: _toggleVideoRecording,
-            onSendMessage: _sendMessage,
-            hasPendingFiles: _pendingFiles.isNotEmpty,
+            child: _hasActiveChat
+                ? _isLoadingHistory
+                    ? const Center(child: CircularProgressIndicator())
+                    : MessagesListView(
+                        messages: _messages, currentModel: _currentModel)
+                : WelcomeView(onCapabilityTap: () {}),
+          ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_pendingFiles.isNotEmpty)
+                  PendingFilesDisplay(
+                    files: _pendingFiles,
+                    onRemove: _removePendingFile,
+                  ),
+                ChatInputArea(
+                  isRecordingAudio: _isRecordingAudio,
+                  isRecordingVideo: _isRecordingVideo,
+                  recognizedText: _recognizedText,
+                  textController: _textController,
+                  onRecordToggle: _toggleRecording,
+                  onFileAdd: _pickFiles,
+                  onCameraOpen: _toggleVideoRecording,
+                  onSendMessage: _sendMessage,
+                  hasPendingFiles: _pendingFiles.isNotEmpty,
+                ),
+              ],
+            ),
           ),
         ],
       ),
-    ),
-  ],
-),
     );
   }
 }
