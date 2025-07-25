@@ -19,6 +19,8 @@ import 'package:flutter_application_1/login_screen.dart';
 import 'package:flutter_application_1/registration_screen.dart';
 // Add this import to the top of lib/main.dart
 // <-- NEW: Import the API service you created
+import 'package:flutter_application_1/firebase_options.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/api_service.dart';
 
 const Color kEiraYellow = Color(0xFFFDB821);
@@ -34,7 +36,14 @@ const double kSidebarWidth = 280.0;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+ await Firebase.initializeApp(
+  options: DefaultFirebaseOptions.currentPlatform,
+);
+if (!kIsWeb) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+  }
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
@@ -166,10 +175,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+
+     if (!kIsWeb) { 
     _speech = stt.SpeechToText();
     _initializeSpeech();
     _initAudioRecorder();
     _initializeCamera();
+  }
     _loadSessions();
   }
 
