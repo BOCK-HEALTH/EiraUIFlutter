@@ -16,7 +16,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_application_1/login_screen.dart';
-import 'package:flutter_svg/flutter_svg.dart'; 
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_application_1/registration_screen.dart';
 // Add this import to the top of lib/main.dart
 // <-- NEW: Import the API service you created
@@ -34,20 +34,37 @@ const Color kEiraSidebarBg = Color(0xFFF7F7F8);
 const Color kEiraBorder = Color(0xFFE5E5E5);
 const Color kEiraUserBg = Color(0xFFF7F7F8);
 const double kSidebarWidth = 280.0;
+// NEW: Define collapsed width
+const double kSidebarCollapsedWidth = 90.0;
+
+// NEW: Added responsive utilities
+class ResponsiveUtils {
+  static bool isMobile(BuildContext context) =>
+      MediaQuery.of(context).size.width < 768;
+  static bool isTablet(BuildContext context) =>
+      MediaQuery.of(context).size.width >= 768 &&
+      MediaQuery.of(context).size.width < 1024;
+  static bool isDesktop(BuildContext context) =>
+      MediaQuery.of(context).size.width >= 1024;
+
+  static double getContentWidth(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth > 1200) return 1200;
+    if (screenWidth > 800) return screenWidth * 0.85;
+    return screenWidth;
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
- await Firebase.initializeApp(
-  options: DefaultFirebaseOptions.currentPlatform,
-);
-if (!kIsWeb) {
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  if (!kIsWeb) {
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
     ]);
   }
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-  ]);
   runApp(const EiraApp());
 }
 
@@ -96,7 +113,6 @@ class EiraApp extends StatelessWidget {
   }
 }
 
-
 class ChatMessage {
   final String text;
   final bool isUser;
@@ -141,6 +157,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  // NEW: State for sidebar collapse
+  bool _isSidebarCollapsed = false;
 
   bool _hasActiveChat = false;
   final List<ChatMessage> _messages = [];
@@ -187,12 +205,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // --- ADDING MOUNTED CHECKS ---
-
   Future<void> _loadSessions() async {
     try {
       final List<ChatSession> sessions = await _apiService.fetchSessions();
-      // CRITICAL FIX: Check if the widget is still mounted before calling setState
       if (mounted) {
         setState(() {
           _sessions.clear();
@@ -200,8 +215,6 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      print("Error in _loadSessions: $e");
-      print("Runtime type of error: ${e.runtimeType}");
       if (mounted) {
         _showSnackBar("Could not load sessions.", Colors.red);
       }
@@ -242,7 +255,6 @@ class _HomeScreenState extends State<HomeScreen> {
               if (index != -1) {
                 _sessions[index] = ChatSession(
                   id: session.id,
-
                   title: newTitle,
                   createdAt: session.createdAt,
                 );
@@ -346,49 +358,26 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _initializeSpeech() async {
-    // This function doesn't call setState, so it's safe
     try {
-      bool available = await _speech.initialize(
-        onStatus: (val) => print('Speech status: $val'),
-        onError: (val) => print('Speech error: $val'),
+      await _speech.initialize(
+        onStatus: (val) {},
+        onError: (val) {},
       );
-      if (available) {
-        print('Speech recognition initialized successfully');
-      } else {
-        print('Speech recognition not available');
-      }
-    } catch (e) {
-      print('Error initializing speech: $e');
-    }
+    } catch (e) {}
   }
 
   Future<void> _initAudioRecorder() async {
-    // This function doesn't call setState, so it's safe
     try {
       _audioRecorder = FlutterSoundRecorder();
       await _audioRecorder!.openRecorder();
-      print('Audio recorder initialized successfully');
-    } catch (e) {
-      print('Error initializing audio recorder: $e');
-    }
+    } catch (e) {}
   }
 
   Future<void> _initializeCamera() async {
     try {
       final cameras = await availableCameras();
-      CameraDescription? frontCamera;
-      CameraDescription? backCamera;
-
-      for (var camera in cameras) {
-        if (camera.lensDirection == CameraLensDirection.front) {
-          frontCamera = camera;
-        } else if (camera.lensDirection == CameraLensDirection.back) {
-          backCamera = camera;
-        }
-      }
-
-      CameraDescription? selectedCamera = frontCamera ?? backCamera;
-      selectedCamera ??= cameras.isNotEmpty ? cameras.first : null;
+      CameraDescription? selectedCamera =
+          cameras.isNotEmpty ? cameras.first : null;
 
       if (selectedCamera != null) {
         _cameraController = CameraController(
@@ -400,15 +389,10 @@ class _HomeScreenState extends State<HomeScreen> {
             setState(() {
               _isCameraInitialized = true;
             });
-            print('Camera initialized successfully');
           }
         });
-      } else {
-        print('No cameras available');
       }
-    } catch (e) {
-      print('Error initializing camera: $e');
-    }
+    } catch (e) {}
   }
 
   void _startNewChat() {
@@ -431,9 +415,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Permission.camera,
         Permission.storage,
       ].request();
-    } catch (e) {
-      print('Error requesting permissions: $e');
-    }
+    } catch (e) {}
   }
 
   Future<void> _startAudioRecording() async {
@@ -670,7 +652,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onSessionTapped(int sessionId) {
-    Navigator.of(context).pop();
+    if (ResponsiveUtils.isMobile(context)) {
+      Navigator.of(context).pop();
+    }
     _loadChatHistory(sessionId: sessionId);
   }
 
@@ -709,7 +693,7 @@ class _HomeScreenState extends State<HomeScreen> {
             file,
             sessionId: _currentSessionId,
           );
-          
+
           if (isNewSession && _currentSessionId == null) {
             newSessionId = responseData['session_id'];
             if (mounted) {
@@ -736,22 +720,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (isNewSession && newSessionId != null) {
         try {
-          String newTitle = messageText.isNotEmpty 
-            ? (messageText.length > 40 ? '${messageText.substring(0, 40)}...' : messageText)
-            : "Chat with Attachments";
-          
+          String newTitle = messageText.isNotEmpty
+              ? (messageText.length > 40
+                  ? '${messageText.substring(0, 40)}...'
+                  : messageText)
+              : "Chat with Attachments";
+
           await _apiService.updateSessionTitle(newSessionId, newTitle);
-          
         } catch (e) {
           if (mounted) {
             _showSnackBar("Failed to update session name.", Colors.red);
           }
-          print("Error caught while auto-updating session title: $e");
         }
       }
 
       await _loadSessions();
-
     } catch (e) {
       if (mounted) {
         _showSnackBar("Failed to send. Please try again.", Colors.red);
@@ -761,7 +744,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-
 
   void _showPermissionDeniedDialog(String permission) {
     showDialog(
@@ -835,6 +817,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final userEmail = user?.email ?? "Guest";
     final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : "U";
 
+    final bool isMobile = ResponsiveUtils.isMobile(context);
+    final bool isDesktop = ResponsiveUtils.isDesktop(context);
+
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
@@ -846,19 +831,22 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
         backgroundColor: kEiraBackground,
         elevation: 0,
-        leading: Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: kEiraYellow,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white, size: 20),
-            onPressed: () {
-              _scaffoldKey.currentState?.openDrawer();
-            },
-          ),
-        ),
+        leading: isMobile
+            ? Container(
+                margin: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: kEiraYellow,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white, size: 20),
+                  onPressed: () {
+                    _scaffoldKey.currentState?.openDrawer();
+                  },
+                ),
+              )
+            : null,
+        automaticallyImplyLeading: isMobile,
         actions: [
           PopupMenuButton<String>(
             offset: const Offset(0, 40),
@@ -871,7 +859,6 @@ class _HomeScreenState extends State<HomeScreen> {
             onSelected: (value) async {
               if (value == 'logout') {
                 await FirebaseAuth.instance.signOut();
-                // No need for context checks after signout, StreamBuilder handles it
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -974,69 +961,105 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      drawer: AppDrawer(
-        onNewSession: _startNewChat,
-        sessions: _sessions,
-        onSessionTapped: _onSessionTapped,
-        onSessionEdited: _editSessionTitle,
-        onSessionDeleted: _deleteSession,
-      ),
+      drawer: isMobile
+          ? AppDrawer(
+              onNewSession: _startNewChat,
+              sessions: _sessions,
+              onSessionTapped: _onSessionTapped,
+              onSessionEdited: _editSessionTitle,
+              onSessionDeleted: _deleteSession,
+              isCollapsed: false, // Mobile drawer is never collapsed
+              onToggle: () {},
+            )
+          : null,
       body: Stack(
-  children: [
-    // Main content area
-    Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: _pendingFiles.isNotEmpty ? 180.0 : 140.0, // Increased padding
-      child: _hasActiveChat
-          ? _isLoadingHistory
-              ? const Center(child: CircularProgressIndicator())
-              : MessagesListView(
-                  messages: _messages, 
-                  currentModel: _currentModel,
-                  // Add extra bottom padding to the ListView itself
-                  extraBottomPadding: 20.0,
-                )
-          : WelcomeView(
-                  currentModel: _currentModel, // <-- PASS THE CURRENT MODEL STATE
-                  onCapabilityTap: () {},
-                ),
-    ),
-    // Input area
-    Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          if (_pendingFiles.isNotEmpty)
-            PendingFilesDisplay(
-              files: _pendingFiles,
-              onRemove: _removePendingFile,
-            ),
-          ChatInputArea(
-            isRecordingAudio: _isRecordingAudio,
-            isRecordingVideo: _isRecordingVideo,
-            recognizedText: _recognizedText,
-            textController: _textController,
-            onRecordToggle: _toggleRecording,
-            onFileAdd: _pickFiles,
-            onCameraOpen: _toggleVideoRecording,
-            onSendMessage: _sendMessage,
-            hasPendingFiles: _pendingFiles.isNotEmpty,
+          Row(
+            children: [
+              if (isDesktop)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: _isSidebarCollapsed
+                      ? kSidebarCollapsedWidth
+                      : kSidebarWidth,
+                  child: AppDrawer(
+                    onNewSession: _startNewChat,
+                    sessions: _sessions,
+                    onSessionTapped: _onSessionTapped,
+                    onSessionEdited: _editSessionTitle,
+                    onSessionDeleted: _deleteSession,
+                    isCollapsed: _isSidebarCollapsed,
+                    onToggle: () {
+                      setState(() {
+                        _isSidebarCollapsed = !_isSidebarCollapsed;
+                      });
+                    },
+                  ),
+                ),
+              Expanded(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: isDesktop ? 800 : double.infinity,
+                  ),
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: _pendingFiles.isNotEmpty ? 180.0 : 140.0,
+                        child: _hasActiveChat
+                            ? _isLoadingHistory
+                                ? const Center(
+                                    child: CircularProgressIndicator())
+                                : MessagesListView(
+                                    messages: _messages,
+                                    currentModel: _currentModel,
+                                    extraBottomPadding: 20.0,
+                                  )
+                            : WelcomeView(
+                                currentModel: _currentModel,
+                                onCapabilityTap: () {},
+                              ),
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_pendingFiles.isNotEmpty)
+                              PendingFilesDisplay(
+                                files: _pendingFiles,
+                                onRemove: _removePendingFile,
+                              ),
+                            ChatInputArea(
+                              isRecordingAudio: _isRecordingAudio,
+                              isRecordingVideo: _isRecordingVideo,
+                              recognizedText: _recognizedText,
+                              textController: _textController,
+                              onRecordToggle: _toggleRecording,
+                              onFileAdd: _pickFiles,
+                              onCameraOpen: _toggleVideoRecording,
+                              onSendMessage: _sendMessage,
+                              hasPendingFiles: _pendingFiles.isNotEmpty,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
-    ),
-  ],
-),
     );
   }
 }
 
-// Rest of your classes
 class ModelDropdown extends StatelessWidget {
   final String currentModel;
   final List<String> availableModels;
@@ -1191,9 +1214,6 @@ class PendingFilesDisplay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The Row's children parameter expects a `List<Widget>`.
-    // The `.map()` method on a list returns an `Iterable<Widget>`.
-    // We must use `.toList()` to convert it. Your original code did this correctly.
     final List<Widget> fileChips = files.asMap().entries.map((entry) {
       int index = entry.key;
       File file = entry.value;
@@ -1305,6 +1325,8 @@ class AppDrawer extends StatelessWidget {
   final Function(int) onSessionTapped;
   final Future<void> Function(ChatSession) onSessionEdited;
   final Future<bool> Function(int) onSessionDeleted;
+  final bool isCollapsed;
+  final VoidCallback onToggle;
 
   const AppDrawer({
     super.key,
@@ -1313,113 +1335,179 @@ class AppDrawer extends StatelessWidget {
     required this.onSessionTapped,
     required this.onSessionEdited,
     required this.onSessionDeleted,
+    required this.isCollapsed,
+    required this.onToggle,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Drawer(
-      backgroundColor: kEiraSidebarBg,
+    // This check is for the permanent sidebar on desktop.
+    // The regular Drawer used on mobile doesn't need this logic.
+    final bool isDesktop = ResponsiveUtils.isDesktop(context);
+
+    return Container(
+      color: kEiraSidebarBg,
       child: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: ElevatedButton.icon(
-                onPressed: onNewSession,
-                icon: const Icon(Icons.add, color: Colors.white),
-                label:
-                    const Text("New Session", style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: kEiraYellow,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(25)),
+            // Toggle button for desktop
+            if (isDesktop)
+              Align(
+                alignment: isCollapsed
+                    ? Alignment.center
+                    : Alignment.centerRight,
+                child: IconButton(
+                  icon: Icon(
+                    isCollapsed ? Icons.menu_open : Icons.menu,
+                    color: kEiraTextSecondary,
+                  ),
+                  onPressed: onToggle,
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text("Recent Sessions",
-                    style:
-                        TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-              ),
+
+            // New Session Button
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: isCollapsed
+                  ? FloatingActionButton(
+                      onPressed: onNewSession,
+                      backgroundColor: kEiraYellow,
+                      elevation: 0,
+                      child: const Icon(Icons.add, color: Colors.white),
+                    )
+                  : ElevatedButton.icon(
+                      onPressed: onNewSession,
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: const Text("New Session",
+                          style: TextStyle(color: Colors.white)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kEiraYellow,
+                        minimumSize: const Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(25)),
+                      ),
+                    ),
             ),
             const SizedBox(height: 10),
+
+            // Recent Sessions Header
+            if (!isCollapsed)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text("Recent Sessions",
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 14)),
+                ),
+              ),
+            if (!isCollapsed) const SizedBox(height: 10),
+
+            // Session List
             Expanded(
               child: sessions.isEmpty
-                  ? const Center(
-                      child: Text("No recent sessions.",
-                          style: TextStyle(color: kEiraTextSecondary)))
-                  // --- MODIFIED: Replaced ListView.builder with a version that includes a PopupMenuButton ---
+                  ? (isCollapsed
+                      ? const Center(
+                          child: Icon(Icons.chat_bubble_outline,
+                              color: kEiraTextSecondary))
+                      : const Center(
+                          child: Text("No recent sessions.",
+                              style: TextStyle(color: kEiraTextSecondary))))
                   : ListView.builder(
                       itemCount: sessions.length,
                       itemBuilder: (context, index) {
                         final session = sessions[index];
-                        return Dismissible(
-                          key: ValueKey(session.id),
-                          direction: DismissDirection.endToStart,
-                          confirmDismiss: (direction) async {
-                            return await onSessionDeleted(session.id);
-                          },
-                          background: Container(
-                            color: Colors.red.withOpacity(0.8),
-                            alignment: Alignment.centerRight,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 20.0),
-                            child: const Icon(Icons.delete, color: Colors.white),
-                          ),
-                          child: ListTile(
-                            title: Text(
-                              session.title,
-                              style: const TextStyle(fontSize: 14),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                                "Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
-                            onTap: () => onSessionTapped(session.id),
-                            trailing: PopupMenuButton<String>(
-                              onSelected: (value) {
-                                if (value == 'rename') {
-                                  onSessionEdited(session);
-                                } else if (value == 'delete') {
-                                  onSessionDeleted(session.id);
-                                }
-                              },
-                              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                                const PopupMenuItem<String>(
-                                  value: 'rename',
-                                  child: ListTile(
-                                    leading: Icon(Icons.edit_outlined, size: 20),
-                                    title: Text('Rename'),
+                        return isCollapsed
+                            ? Tooltip(
+                                message: session.title,
+                                child: InkWell(
+                                  onTap: () => onSessionTapped(session.id),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 16.0),
+                                    child: const Center(
+                                      child: Icon(Icons.history,
+                                          color: kEiraTextSecondary),
+                                    ),
                                   ),
                                 ),
-                                const PopupMenuItem<String>(
-                                  value: 'delete',
-                                  child: ListTile(
-                                    leading: Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                                    title: Text('Delete', style: TextStyle(color: Colors.red)),
+                              )
+                            : Dismissible(
+                                key: ValueKey(session.id),
+                                direction: DismissDirection.endToStart,
+                                confirmDismiss: (direction) async {
+                                  return await onSessionDeleted(session.id);
+                                },
+                                background: Container(
+                                  color: Colors.red.withOpacity(0.8),
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20.0),
+                                  child: const Icon(Icons.delete,
+                                      color: Colors.white),
+                                ),
+                                child: ListTile(
+                                  title: Text(
+                                    session.title,
+                                    style: const TextStyle(fontSize: 14),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                      "Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
+                                  leading: const Icon(Icons.history_outlined,
+                                      color: kEiraTextSecondary),
+                                  onTap: () => onSessionTapped(session.id),
+                                  trailing: PopupMenuButton<String>(
+                                    onSelected: (value) {
+                                      if (value == 'rename') {
+                                        onSessionEdited(session);
+                                      } else if (value == 'delete') {
+                                        onSessionDeleted(session.id);
+                                      }
+                                    },
+                                    itemBuilder: (BuildContext context) =>
+                                        <PopupMenuEntry<String>>[
+                                      const PopupMenuItem<String>(
+                                        value: 'rename',
+                                        child: ListTile(
+                                          leading: Icon(Icons.edit_outlined,
+                                              size: 20),
+                                          title: Text('Rename'),
+                                        ),
+                                      ),
+                                      const PopupMenuItem<String>(
+                                        value: 'delete',
+                                        child: ListTile(
+                                          leading: Icon(Icons.delete_outline,
+                                              color: Colors.red, size: 20),
+                                          title: Text('Delete',
+                                              style: TextStyle(
+                                                  color: Colors.red)),
+                                        ),
+                                      ),
+                                    ],
+                                    icon: const Icon(Icons.more_vert,
+                                        color: kEiraTextSecondary, size: 20),
                                   ),
                                 ),
-                              ],
-                              icon: const Icon(Icons.more_vert, color: kEiraTextSecondary, size: 20),
-                            ),
-                          ),
-                        );
+                              );
                       },
                     ),
             ),
-            const Divider(color: kEiraBorder),
+            const Divider(color: kEiraBorder, height: 1),
+
+            // Logout Button
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text("Logout", style: TextStyle(color: Colors.red)),
+              title: isCollapsed
+                  ? null
+                  : const Text("Logout", style: TextStyle(color: Colors.red)),
               onTap: () async {
                 await FirebaseAuth.instance.signOut();
                 if (context.mounted) {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const LoginScreen()),
                     (Route<dynamic> route) => false,
                   );
                 }
@@ -1434,15 +1522,11 @@ class AppDrawer extends StatelessWidget {
 
 class WelcomeView extends StatelessWidget {
   final VoidCallback onCapabilityTap;
-  final String currentModel; // <-- ADDED: To receive the current model name
+  final String currentModel;
 
-  const WelcomeView({
-    super.key, 
-    required this.onCapabilityTap, 
-    required this.currentModel // <-- ADDED: Make it required
-  });
+  const WelcomeView(
+      {super.key, required this.onCapabilityTap, required this.currentModel});
 
-  // --- ADDED: Helper function to choose the logo based on the model name ---
   String _getLogoForModel(String model) {
     switch (model) {
       case 'Eira 0.1':
@@ -1452,71 +1536,121 @@ class WelcomeView extends StatelessWidget {
       case 'Eira 1':
         return 'assets/images/Eira 1.png';
       default:
-        // Provide a fallback logo
         return 'assets/images/Eira 1.png';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // --- MODIFIED: Image.asset now uses the dynamic helper function ---
-            Image.asset(
-              _getLogoForModel(currentModel), // <-- Use the helper function
-              key: ValueKey(currentModel),   // <-- Add a key to ensure it updates
-              height: 150,
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              "Eira - Your AI Health Assistant",
-              style: TextStyle(
-                fontSize: 16,
-                color: kEiraTextSecondary,
-                fontWeight: FontWeight.w400,
-                fontFamily: 'Roboto',
+    final bool isMobile = ResponsiveUtils.isMobile(context);
+    final bool isTablet = ResponsiveUtils.isTablet(context);
+    final double contentWidth = ResponsiveUtils.getContentWidth(context);
+
+    return Center(
+      child: Container(
+        width: contentWidth,
+        padding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 20.0 : 40.0,
+          vertical: 16.0,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                _getLogoForModel(currentModel),
+                key: ValueKey(currentModel),
+                height: isMobile ? 120 : 150,
               ),
-            ),
-            const SizedBox(height: 24),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12.0,
-                mainAxisSpacing: 12.0,
-                childAspectRatio: 0.95,
+              const SizedBox(height: 12),
+              const Text(
+                "Eira - Your AI Health Assistant",
+                style: TextStyle(
+                  fontSize: 16,
+                  color: kEiraTextSecondary,
+                  fontWeight: FontWeight.w400,
+                  fontFamily: 'Roboto',
+                ),
+                textAlign: TextAlign.center,
               ),
-              itemCount: 4,
-              itemBuilder: (context, index) {
-                List<Map<String, dynamic>> cardsData = [
-                  {'icon': Icons.medical_information, 'title': 'Medical Assistance', 'description': 'Get reliable medical information and health guidance', 'color': const Color(0xFF8A5FFC)},
-                  {'icon': Icons.medication, 'title': 'Medication Info', 'description': 'Learn about medications, dosages, and interactions', 'color': const Color(0xFFF97316)},
-                  {'icon': Icons.biotech, 'title': 'Health Analysis', 'description': 'Understand symptoms and get preliminary health insights', 'color': const Color(0xFF3B82F6)},
-                  {'icon': Icons.favorite, 'title': 'Wellness Tips', 'description': 'Receive personalized wellness and lifestyle recommendations', 'color': const Color(0xFFEC4899)},
-                ];
-                final card = cardsData[index];
-                return CapabilityCard(
-                  icon: card['icon'],
-                  title: card['title'],
-                  description: card['description'],
-                  color: card['color'],
-                  onTap: onCapabilityTap,
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-          ],
+              const SizedBox(height: 24),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  int crossAxisCount;
+                  double childAspectRatio;
+
+                  if (isMobile) {
+                    crossAxisCount = 2;
+                    childAspectRatio = 0.95;
+                  } else if (isTablet) {
+                    crossAxisCount = 3;
+                    childAspectRatio = 1.1;
+                  } else {
+                    crossAxisCount = 4;
+                    childAspectRatio = 1.2;
+                  }
+
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      crossAxisSpacing: isMobile ? 12.0 : 16.0,
+                      mainAxisSpacing: isMobile ? 12.0 : 16.0,
+                      childAspectRatio: childAspectRatio,
+                    ),
+                    itemCount: 4,
+                    itemBuilder: (context, index) {
+                      List<Map<String, dynamic>> cardsData = [
+                        {
+                          'icon': Icons.medical_information,
+                          'title': 'Medical Assistance',
+                          'description':
+                              'Get reliable medical information and health guidance',
+                          'color': const Color(0xFF8A5FFC)
+                        },
+                        {
+                          'icon': Icons.medication,
+                          'title': 'Medication Info',
+                          'description':
+                              'Learn about medications, dosages, and interactions',
+                          'color': const Color(0xFFF97316)
+                        },
+                        {
+                          'icon': Icons.biotech,
+                          'title': 'Health Analysis',
+                          'description':
+                              'Understand symptoms and get preliminary health insights',
+                          'color': const Color(0xFF3B82F6)
+                        },
+                        {
+                          'icon': Icons.favorite,
+                          'title': 'Wellness Tips',
+                          'description':
+                              'Receive personalized wellness and lifestyle recommendations',
+                          'color': const Color(0xFFEC4899)
+                        },
+                      ];
+                      final card = cardsData[index];
+                      return CapabilityCard(
+                        icon: card['icon'],
+                        title: card['title'],
+                        description: card['description'],
+                        color: card['color'],
+                        onTap: onCapabilityTap,
+                      );
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
         ),
       ),
     );
   }
 }
-
 
 class CapabilityCard extends StatelessWidget {
   final IconData icon;
@@ -1540,7 +1674,6 @@ class CapabilityCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        // Reduced padding for a more compact card.
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
         decoration: BoxDecoration(
           color: kEiraBackground,
@@ -1558,7 +1691,7 @@ class CapabilityCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 44, // Slightly smaller icon background
+              width: 44,
               height: 44,
               decoration: BoxDecoration(
                 color: color.withOpacity(0.1),
@@ -1572,7 +1705,7 @@ class CapabilityCard extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14, // Slightly smaller title font
+                fontSize: 14,
                 color: kEiraText,
                 fontFamily: 'Roboto',
               ),
@@ -1582,7 +1715,7 @@ class CapabilityCard extends StatelessWidget {
               description,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 12, // Slightly smaller description font
+                fontSize: 12,
                 color: kEiraTextSecondary,
                 height: 1.2,
                 fontFamily: 'Roboto',
@@ -1603,8 +1736,8 @@ class MessagesListView extends StatefulWidget {
   final double extraBottomPadding;
 
   const MessagesListView({
-    super.key, 
-    required this.messages, 
+    super.key,
+    required this.messages,
     required this.currentModel,
     this.extraBottomPadding = 0.0,
   });
@@ -1619,7 +1752,6 @@ class _MessagesListViewState extends State<MessagesListView> {
   @override
   void initState() {
     super.initState();
-    // Scroll to bottom when widget is first created
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottom();
     });
@@ -1628,7 +1760,6 @@ class _MessagesListViewState extends State<MessagesListView> {
   @override
   void didUpdateWidget(MessagesListView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Scroll to bottom when new messages are added
     if (widget.messages.length > oldWidget.messages.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToBottom();
@@ -1654,6 +1785,8 @@ class _MessagesListViewState extends State<MessagesListView> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isMobile = ResponsiveUtils.isMobile(context);
+
     if (widget.messages.isEmpty) {
       return const Center(
         child: Text(
@@ -1666,27 +1799,33 @@ class _MessagesListViewState extends State<MessagesListView> {
         ),
       );
     }
-    return ListView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.only(
-        left: 16.0,
-        right: 16.0,
-        top: 16.0,
-        bottom: 16.0 + widget.extraBottomPadding, // Add extra bottom padding
+
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 800),
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: EdgeInsets.only(
+            left: isMobile ? 16.0 : 24.0,
+            right: isMobile ? 16.0 : 24.0,
+            top: 16.0,
+            bottom: 16.0 + widget.extraBottomPadding,
+          ),
+          itemCount: widget.messages.length,
+          itemBuilder: (context, index) {
+            final message = widget.messages[index];
+            return MessageBubble(
+              isUser: message.isUser,
+              text: message.text,
+              attachments: message.attachments,
+              timestamp: message.timestamp,
+              modelName: widget.currentModel,
+              fileUrl: message.fileUrl,
+              fileType: message.fileType,
+            );
+          },
+        ),
       ),
-      itemCount: widget.messages.length,
-      itemBuilder: (context, index) {
-        final message = widget.messages[index];
-        return MessageBubble(
-          isUser: message.isUser,
-          text: message.text,
-          attachments: message.attachments,
-          timestamp: message.timestamp,
-          modelName: widget.currentModel,
-          fileUrl: message.fileUrl,
-          fileType: message.fileType,
-        );
-      },
     );
   }
 }
@@ -1713,7 +1852,8 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool hasLocalAttachment = attachments != null && attachments!.isNotEmpty;
+    final bool hasLocalAttachment =
+        attachments != null && attachments!.isNotEmpty;
     final bool hasRemoteAttachment = fileUrl != null;
 
     return Container(
@@ -1754,7 +1894,8 @@ class MessageBubble extends StatelessWidget {
                 ]),
                 const SizedBox(height: 4),
                 if (text.isNotEmpty)
-                  Text(text, style: const TextStyle(height: 1.5, fontFamily: 'Roboto')),
+                  Text(text,
+                      style: const TextStyle(height: 1.5, fontFamily: 'Roboto')),
                 if (hasLocalAttachment) ...[
                   const SizedBox(height: 10),
                   ...attachments!.map((file) => AttachmentChip(file: file)),
@@ -1780,7 +1921,8 @@ class RemoteAttachmentChip extends StatelessWidget {
   final String fileUrl;
   final String? fileType;
 
-  const RemoteAttachmentChip({super.key, required this.fileUrl, this.fileType});
+  const RemoteAttachmentChip(
+      {super.key, required this.fileUrl, this.fileType});
 
   IconData _getIconForMimeType(String? mimeType) {
     if (mimeType == null) return Icons.insert_drive_file;
@@ -1805,7 +1947,6 @@ class RemoteAttachmentChip extends StatelessWidget {
       }
       return fullFileName.substring(firstUnderscoreIndex + 1);
     } catch (e) {
-      print("Error parsing filename: $e");
       return "Attachment";
     }
   }
@@ -1906,7 +2047,6 @@ class AttachmentChip extends StatelessWidget {
   }
 
   void _openFile(BuildContext context, File file) {
-    print('Opening file: ${path.basename(file.path)}');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Opening ${path.basename(file.path)}')),
     );
@@ -2029,8 +2169,11 @@ class _ChatInputAreaState extends State<ChatInputArea> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isMobile = ResponsiveUtils.isMobile(context);
+    final bool isWeb = kIsWeb;
+
     return Container(
-      padding: const EdgeInsets.all(20.0),
+      padding: EdgeInsets.all(isMobile ? 20.0 : 24.0),
       decoration: BoxDecoration(
         color: kEiraBackground,
         border: Border(top: BorderSide(color: kEiraBorder.withOpacity(0.3))),
@@ -2039,6 +2182,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
+            constraints: const BoxConstraints(maxWidth: 800),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(25),
@@ -2058,21 +2202,20 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                     controller: widget.textController,
                     decoration: const InputDecoration(
                       hintText: "Start typing a prompt",
-                      hintStyle:
-                          TextStyle(color: kEiraTextSecondary, fontFamily: 'Roboto'),
+                      hintStyle: TextStyle(
+                          color: kEiraTextSecondary, fontFamily: 'Roboto'),
                       border: InputBorder.none,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                      contentPadding: EdgeInsets.symmetric(
+                          horizontal: 20.0, vertical: 16.0),
                     ),
                     style: const TextStyle(fontFamily: 'Roboto'),
                     maxLines: null,
+                    minLines: 1,
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.add, color: kEiraTextSecondary),
-                  onPressed: () {
-                    widget.onFileAdd();
-                  },
+                  onPressed: widget.onFileAdd,
                 ),
                 Container(
                   margin: const EdgeInsets.only(right: 4),
@@ -2082,37 +2225,33 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.send, color: Colors.white),
-                    onPressed: () {
-                      widget.onSendMessage();
-                    },
+                    onPressed: widget.onSendMessage,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildActionButton(
-                icon: widget.isRecordingAudio ? Icons.stop : Icons.mic,
-                label: widget.isRecordingAudio ? "Stop" : "Talk",
-                onPressed: () {
-                  widget.onRecordToggle();
-                },
-                isActive: widget.isRecordingAudio,
-              ),
-              const SizedBox(width: 24),
-              _buildActionButton(
-                icon: widget.isRecordingVideo ? Icons.stop : Icons.videocam,
-                label: widget.isRecordingVideo ? "Stop" : "Webcam",
-                onPressed: () {
-                  widget.onCameraOpen();
-                },
-                isActive: widget.isRecordingVideo,
-              ),
-            ],
-          ),
+          if (!isWeb && isMobile) ...[
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildActionButton(
+                  icon: widget.isRecordingAudio ? Icons.stop : Icons.mic,
+                  label: widget.isRecordingAudio ? "Stop" : "Talk",
+                  onPressed: widget.onRecordToggle,
+                  isActive: widget.isRecordingAudio,
+                ),
+                const SizedBox(width: 24),
+                _buildActionButton(
+                  icon: widget.isRecordingVideo ? Icons.stop : Icons.videocam,
+                  label: widget.isRecordingVideo ? "Stop" : "Webcam",
+                  onPressed: widget.onCameraOpen,
+                  isActive: widget.isRecordingVideo,
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -2211,11 +2350,11 @@ class VideoRecordingPreview extends StatelessWidget {
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20)),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
                   ),
-                  child:
-                      const Text("Stop Recording", style: TextStyle(fontFamily: 'Roboto')),
+                  child: const Text("Stop Recording",
+                      style: TextStyle(fontFamily: 'Roboto')),
                 ),
                 const SizedBox(width: 16),
                 OutlinedButton(
@@ -2225,10 +2364,11 @@ class VideoRecordingPreview extends StatelessWidget {
                     side: const BorderSide(color: kEiraBorder),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20)),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
                   ),
-                  child: const Text("Close", style: TextStyle(fontFamily: 'Roboto')),
+                  child:
+                      const Text("Close", style: TextStyle(fontFamily: 'Roboto')),
                 ),
               ],
             ),
