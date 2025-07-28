@@ -16,6 +16,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_application_1/login_screen.dart';
+import 'package:flutter_svg/flutter_svg.dart'; 
 import 'package:flutter_application_1/registration_screen.dart';
 // Add this import to the top of lib/main.dart
 // <-- NEW: Import the API service you created
@@ -94,6 +95,7 @@ class EiraApp extends StatelessWidget {
     );
   }
 }
+
 
 class ChatMessage {
   final String text;
@@ -996,7 +998,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   // Add extra bottom padding to the ListView itself
                   extraBottomPadding: 20.0,
                 )
-          : WelcomeView(onCapabilityTap: () {}),
+          : WelcomeView(
+                  currentModel: _currentModel, // <-- PASS THE CURRENT MODEL STATE
+                  onCapabilityTap: () {},
+                ),
     ),
     // Input area
     Positioned(
@@ -1429,86 +1434,89 @@ class AppDrawer extends StatelessWidget {
 
 class WelcomeView extends StatelessWidget {
   final VoidCallback onCapabilityTap;
+  final String currentModel; // <-- ADDED: To receive the current model name
 
-  const WelcomeView({super.key, required this.onCapabilityTap});
+  const WelcomeView({
+    super.key, 
+    required this.onCapabilityTap, 
+    required this.currentModel // <-- ADDED: Make it required
+  });
+
+  // --- ADDED: Helper function to choose the logo based on the model name ---
+  String _getLogoForModel(String model) {
+    switch (model) {
+      case 'Eira 0.1':
+        return 'assets/images/Eira 0.1.png';
+      case 'Eira 0.2':
+        return 'assets/images/Eira 0.2.png';
+      case 'Eira 1':
+        return 'assets/images/Eira 1.png';
+      default:
+        // Provide a fallback logo
+        return 'assets/images/Eira 1.png';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
-      child: Column(
-        children: [
-          const SizedBox(height: 20),
-          Image.asset(
-            'assets/images/Eira.png',
-            width: 250,
-            height: 250,
-            fit: BoxFit.contain,
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            "Eira - Your AI Health Assistant",
-            style: TextStyle(
-              fontSize: 16,
-              color: kEiraTextSecondary,
-              fontWeight: FontWeight.w400,
-              fontFamily: 'Roboto',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // --- MODIFIED: Image.asset now uses the dynamic helper function ---
+            Image.asset(
+              _getLogoForModel(currentModel), // <-- Use the helper function
+              key: ValueKey(currentModel),   // <-- Add a key to ensure it updates
+              height: 150,
             ),
-          ),
-          const SizedBox(height: 30),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12.0,
-              mainAxisSpacing: 12.0,
-              childAspectRatio: 0.8,
+            const SizedBox(height: 12),
+            const Text(
+              "Eira - Your AI Health Assistant",
+              style: TextStyle(
+                fontSize: 16,
+                color: kEiraTextSecondary,
+                fontWeight: FontWeight.w400,
+                fontFamily: 'Roboto',
+              ),
             ),
-            itemCount: 4,
-            itemBuilder: (context, index) {
-              List<Map<String, dynamic>> cardsData = [
-                {
-                  'icon': Icons.medical_information,
-                  'title': 'Medical Assistance',
-                  'description': 'Get reliable medical information and health guidance',
-                  'color': const Color(0xFF8A5FFC),
-                },
-                {
-                  'icon': Icons.medication,
-                  'title': 'Medication Info',
-                  'description': 'Learn about medications, dosages, and interactions',
-                  'color': const Color(0xFFF97316),
-                },
-                {
-                  'icon': Icons.biotech,
-                  'title': 'Health Analysis',
-                  'description': 'Understand symptoms and get preliminary health insights',
-                  'color': const Color(0xFF3B82F6),
-                },
-                {
-                  'icon': Icons.favorite,
-                  'title': 'Wellness Tips',
-                  'description': 'Receive personalized wellness and lifestyle recommendations',
-                  'color': const Color(0xFFEC4899),
-                },
-              ];
-              final card = cardsData[index];
-              return CapabilityCard(
-                icon: card['icon'],
-                title: card['title'],
-                description: card['description'],
-                color: card['color'],
-                onTap: onCapabilityTap,
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-        ],
+            const SizedBox(height: 24),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12.0,
+                mainAxisSpacing: 12.0,
+                childAspectRatio: 0.95,
+              ),
+              itemCount: 4,
+              itemBuilder: (context, index) {
+                List<Map<String, dynamic>> cardsData = [
+                  {'icon': Icons.medical_information, 'title': 'Medical Assistance', 'description': 'Get reliable medical information and health guidance', 'color': const Color(0xFF8A5FFC)},
+                  {'icon': Icons.medication, 'title': 'Medication Info', 'description': 'Learn about medications, dosages, and interactions', 'color': const Color(0xFFF97316)},
+                  {'icon': Icons.biotech, 'title': 'Health Analysis', 'description': 'Understand symptoms and get preliminary health insights', 'color': const Color(0xFF3B82F6)},
+                  {'icon': Icons.favorite, 'title': 'Wellness Tips', 'description': 'Receive personalized wellness and lifestyle recommendations', 'color': const Color(0xFFEC4899)},
+                ];
+                final card = cardsData[index];
+                return CapabilityCard(
+                  icon: card['icon'],
+                  title: card['title'],
+                  description: card['description'],
+                  color: card['color'],
+                  onTap: onCapabilityTap,
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }
 }
+
 
 class CapabilityCard extends StatelessWidget {
   final IconData icon;
@@ -1532,7 +1540,8 @@ class CapabilityCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        // Reduced padding for a more compact card.
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
         decoration: BoxDecoration(
           color: kEiraBackground,
           border: Border.all(color: kEiraBorder.withOpacity(0.3)),
@@ -1549,17 +1558,13 @@ class CapabilityCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: 44, // Slightly smaller icon background
+              height: 44,
               decoration: BoxDecoration(
                 color: color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(
-                icon,
-                color: color,
-                size: 24,
-              ),
+              child: Icon(icon, color: color, size: 22),
             ),
             const SizedBox(height: 10),
             Text(
@@ -1567,7 +1572,7 @@ class CapabilityCard extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 15,
+                fontSize: 14, // Slightly smaller title font
                 color: kEiraText,
                 fontFamily: 'Roboto',
               ),
@@ -1577,9 +1582,9 @@ class CapabilityCard extends StatelessWidget {
               description,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 12, // Slightly smaller description font
                 color: kEiraTextSecondary,
-                height: 1.3,
+                height: 1.2,
                 fontFamily: 'Roboto',
               ),
               maxLines: 3,

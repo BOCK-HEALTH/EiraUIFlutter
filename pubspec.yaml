@@ -15,7 +15,7 @@ dependencies:
   http: ^1.1.0
   # UI PACKAGES
   cupertino_icons: ^1.0.8
-  flutter_svg: ^2.0.9
+  flutter_svg: ^2.0.10+1
   intl: ^0.18.1
   # NATIVE FUNCTIONALITY PACKAGES
   file_picker: ^10.2.0
@@ -40,8 +40,10 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/images/Eira 0.1.png
+    - assets/images/Eira 0.2.png
+    - assets/images/Eira 1.png
     - assets/images/Eira.png
-    - assets/images/Eira.svg
 
 flutter_launcher_icons:
   android: true
