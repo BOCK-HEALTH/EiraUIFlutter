@@ -847,253 +847,295 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final userName = user?.displayName ?? user?.email?.split('@')[0] ?? "User";
-    final userEmail = user?.email ?? "Guest";
-    final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : "U";
+Widget build(BuildContext context) {
+  final user = FirebaseAuth.instance.currentUser;
+  final userName = user?.displayName ?? user?.email?.split('@')[0] ?? "User";
+  final userEmail = user?.email ?? "Guest";
+  final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : "U";
 
-    final bool isMobile = ResponsiveUtils.isMobile(context);
-    final bool isDesktop = ResponsiveUtils.isDesktop(context);
+  final bool isMobile = ResponsiveUtils.isMobile(context);
+  final bool isDesktop = ResponsiveUtils.isDesktop(context);
 
-    return Scaffold(
-      key: _scaffoldKey,
-      appBar: AppBar(
-        title: ModelDropdown(
-          currentModel: _currentModel,
-          availableModels: _availableModels,
-          onModelChanged: _onModelChanged,
-        ),
-        centerTitle: true,
-        backgroundColor: kEiraBackground,
-        elevation: 0,
-        leading: isMobile
-            ? Container(
-                margin: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: kEiraYellow,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.menu, color: Colors.white, size: 20),
-                  onPressed: () {
-                    _scaffoldKey.currentState?.openDrawer();
-                  },
-                ),
-              )
-            : null,
-        automaticallyImplyLeading: isMobile,
-        actions: [
-          PopupMenuButton<String>(
-            offset: const Offset(0, 40),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: kEiraBorder.withOpacity(0.5)),
-            ),
-            elevation: 8,
-            color: kEiraBackground,
-            onSelected: (value) async {
-              if (value == 'logout') {
-                await FirebaseAuth.instance.signOut();
-              }
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(
-                value: 'user_info',
-                enabled: false,
-                padding: EdgeInsets.zero,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: kEiraBackground,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 20,
-                        backgroundColor: kEiraYellow,
-                        child: Text(
-                          userInitial,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            fontFamily: 'Roboto',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              userName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
-                                color: kEiraText,
-                                fontFamily: 'Roboto',
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              userEmail,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: kEiraTextSecondary,
-                                fontFamily: 'Roboto',
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+  return Scaffold(
+    key: _scaffoldKey,
+    appBar: AppBar(
+      title: ModelDropdown(
+        currentModel: _currentModel,
+        availableModels: _availableModels,
+        onModelChanged: _onModelChanged,
+      ),
+      centerTitle: true,
+      backgroundColor: kEiraBackground,
+      elevation: 0,
+      leading: isMobile
+          ? Container(
+              margin: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: kEiraYellow,
+                borderRadius: BorderRadius.circular(8),
               ),
-              const PopupMenuDivider(),
-              PopupMenuItem<String>(
-                value: 'logout',
+              child: IconButton(
+                icon: const Icon(Icons.menu, color: Colors.white, size: 20),
+                onPressed: () {
+                  _scaffoldKey.currentState?.openDrawer();
+                },
+              ),
+            )
+          : null,
+      automaticallyImplyLeading: isMobile,
+      actions: [
+        PopupMenuButton<String>(
+          offset: const Offset(0, 40),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: kEiraBorder.withOpacity(0.5)),
+          ),
+          elevation: 8,
+          color: kEiraBackground,
+          onSelected: (value) async {
+            if (value == 'logout') {
+              await FirebaseAuth.instance.signOut();
+            }
+          },
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            PopupMenuItem<String>(
+              value: 'user_info',
+              enabled: false,
+              padding: EdgeInsets.zero,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: kEiraBackground,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Row(
                   children: [
-                    const Icon(Icons.logout, color: Colors.red, size: 20),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Logout',
-                      style: TextStyle(
-                          color: Colors.red,
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: kEiraYellow,
+                      child: Text(
+                        userInitial,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
                           fontFamily: 'Roboto',
-                          fontSize: 15),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            userName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              color: kEiraText,
+                              fontFamily: 'Roboto',
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            userEmail,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: kEiraTextSecondary,
+                              fontFamily: 'Roboto',
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
-            child: Container(
-              margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
-              decoration: BoxDecoration(
-                color: kEiraYellow,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: CircleAvatar(
-                radius: 20,
-                backgroundColor: kEiraYellow,
-                child: Text(
-                  userInitial,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    fontFamily: 'Roboto',
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem<String>(
+              value: 'logout',
+              child: Row(
+                children: [
+                  const Icon(Icons.logout, color: Colors.red, size: 20),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Logout',
+                    style: TextStyle(
+                        color: Colors.red,
+                        fontFamily: 'Roboto',
+                        fontSize: 15),
                   ),
+                ],
+              ),
+            ),
+          ],
+          child: Container(
+            margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+            decoration: BoxDecoration(
+              color: kEiraYellow,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: CircleAvatar(
+              radius: 20,
+              backgroundColor: kEiraYellow,
+              child: Text(
+                userInitial,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  fontFamily: 'Roboto',
                 ),
               ),
             ),
           ),
-        ],
-      ),
-      drawer: isMobile
-          ? AppDrawer(
-              onNewSession: _startNewChat,
-              sessions: _sessions,
-              onSessionTapped: _onSessionTapped,
-              onSessionEdited: _editSessionTitle,
-              onSessionDeleted: _deleteSession,
-              isCollapsed: false, // Mobile drawer is never collapsed
-              onToggle: () {},
-            )
-          : null,
-      body: Stack(
-        children: [
-          Row(
-            children: [
-              if (isDesktop)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: _isSidebarCollapsed
-                      ? kSidebarCollapsedWidth
-                      : kSidebarWidth,
-                  child: AppDrawer(
-                    onNewSession: _startNewChat,
-                    sessions: _sessions,
-                    onSessionTapped: _onSessionTapped,
-                    onSessionEdited: _editSessionTitle,
-                    onSessionDeleted: _deleteSession,
-                    isCollapsed: _isSidebarCollapsed,
-                    onToggle: () {
-                      setState(() {
-                        _isSidebarCollapsed = !_isSidebarCollapsed;
-                      });
-                    },
-                  ),
-                ),
-              Expanded(
-                child: Container(
-                  constraints: BoxConstraints(
-                    maxWidth: isDesktop ? 800 : double.infinity,
-                  ),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: _pendingFiles.isNotEmpty ? 180.0 : 140.0,
-                        child: _hasActiveChat
-                            ? _isLoadingHistory
-                                ? const Center(
-                                    child: CircularProgressIndicator())
-                                : MessagesListView(
-                                    messages: _messages,
-                                    currentModel: _currentModel,
-                                    extraBottomPadding: 20.0,
-                                  )
-                            : WelcomeView(
-                                currentModel: _currentModel,
-                                onCapabilityTap: () {},
-                              ),
+        ),
+      ],
+    ),
+    drawer: isMobile
+        ? AppDrawer(
+            onNewSession: _startNewChat,
+            sessions: _sessions,
+            onSessionTapped: _onSessionTapped,
+            onSessionEdited: _editSessionTitle,
+            onSessionDeleted: _deleteSession,
+            isCollapsed: false, // Mobile drawer is never collapsed
+            onToggle: () {},
+          )
+        : null,
+    body: Stack(
+      children: [
+        Row(
+          children: [
+            // Improved sidebar implementation with proper visibility handling
+            if (isDesktop)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                width: _isSidebarCollapsed ? 0 : kSidebarWidth,
+                child: ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.centerLeft,
+                    maxWidth: kSidebarWidth,
+                    child: Visibility(
+                      visible: !_isSidebarCollapsed,
+                      maintainState: true,
+                      child: AppDrawer(
+                        onNewSession: _startNewChat,
+                        sessions: _sessions,
+                        onSessionTapped: _onSessionTapped,
+                        onSessionEdited: _editSessionTitle,
+                        onSessionDeleted: _deleteSession,
+                        isCollapsed: _isSidebarCollapsed,
+                        onToggle: () {
+                          setState(() {
+                            _isSidebarCollapsed = !_isSidebarCollapsed;
+                          });
+                        },
                       ),
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_pendingFiles.isNotEmpty)
-                              PendingFilesDisplay(
-                                files: _pendingFiles,
-                                onRemove: _removePendingFile,
-                              ),
-                            ChatInputArea(
-                              isRecordingAudio: _isRecordingAudio,
-                              isRecordingVideo: _isRecordingVideo,
-                              recognizedText: _recognizedText,
-                              textController: _textController,
-                              onRecordToggle: _toggleRecording,
-                              onFileAdd: _pickFiles,
-                              onCameraOpen: _toggleVideoRecording,
-                              onSendMessage: _sendMessage,
-                              hasPendingFiles: _pendingFiles.isNotEmpty,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+            Expanded(
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: isDesktop ? 800 : double.infinity,
+                ),
+                child: Stack(
+                  children: [
+                    // Add toggle button for collapsed sidebar
+                    if (isDesktop && _isSidebarCollapsed)
+                      Positioned(
+                        top: 16,
+                        left: 16,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: kEiraYellow,
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: IconButton(
+                            icon: const Icon(
+                              Icons.menu,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isSidebarCollapsed = false;
+                              });
+                            },
+                            tooltip: 'Show Sidebar',
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: _pendingFiles.isNotEmpty ? 180.0 : 140.0,
+                      child: _hasActiveChat
+                          ? _isLoadingHistory
+                              ? const Center(
+                                  child: CircularProgressIndicator())
+                              : MessagesListView(
+                                  messages: _messages,
+                                  currentModel: _currentModel,
+                                  extraBottomPadding: 20.0,
+                                )
+                          : WelcomeView(
+                              currentModel: _currentModel,
+                              onCapabilityTap: () {},
+                            ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_pendingFiles.isNotEmpty)
+                            PendingFilesDisplay(
+                              files: _pendingFiles,
+                              onRemove: _removePendingFile,
+                            ),
+                          ChatInputArea(
+                            isRecordingAudio: _isRecordingAudio,
+                            isRecordingVideo: _isRecordingVideo,
+                            recognizedText: _recognizedText,
+                            textController: _textController,
+                            onRecordToggle: _toggleRecording,
+                            onFileAdd: _pickFiles,
+                            onCameraOpen: _toggleVideoRecording,
+                            onSendMessage: _sendMessage,
+                            hasPendingFiles: _pendingFiles.isNotEmpty,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
 }
 
 class ModelDropdown extends StatelessWidget {
@@ -1377,8 +1419,6 @@ class AppDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // This check is for the permanent sidebar on desktop.
-    // The regular Drawer used on mobile doesn't need this logic.
     final bool isDesktop = ResponsiveUtils.isDesktop(context);
 
     return Container(
@@ -1386,48 +1426,37 @@ class AppDrawer extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            // Toggle button for desktop
-            if (isDesktop)
+            // Toggle button for desktop (only shown when not collapsed)
+            if (isDesktop && !isCollapsed)
               Align(
-                alignment: isCollapsed
-                    ? Alignment.center
-                    : Alignment.centerRight,
+                alignment: Alignment.centerRight,
                 child: IconButton(
-                  icon: Icon(
-                    isCollapsed ? Icons.menu_open : Icons.menu,
-                    color: kEiraTextSecondary,
-                  ),
+                  icon: const Icon(Icons.menu, color: kEiraTextSecondary),
                   onPressed: onToggle,
                 ),
               ),
 
-            // New Session Button
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: isCollapsed
-                  ? FloatingActionButton(
-                      onPressed: onNewSession,
-                      backgroundColor: kEiraYellow,
-                      elevation: 0,
-                      child: const Icon(Icons.add, color: Colors.white),
-                    )
-                  : ElevatedButton.icon(
-                      onPressed: onNewSession,
-                      icon: const Icon(Icons.add, color: Colors.white),
-                      label: const Text("New Session",
-                          style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: kEiraYellow,
-                        minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(25)),
-                      ),
-                    ),
-            ),
-            const SizedBox(height: 10),
+            // Only show content when not collapsed
+            if (!isCollapsed) ...[
+              // New Session Button
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ElevatedButton.icon(
+                  onPressed: onNewSession,
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: const Text("New Session",
+                      style: TextStyle(color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kEiraYellow,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
 
-            // Recent Sessions Header
-            if (!isCollapsed)
+              // Recent Sessions Header
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.0),
                 child: Align(
@@ -1437,125 +1466,118 @@ class AppDrawer extends StatelessWidget {
                           fontWeight: FontWeight.w600, fontSize: 14)),
                 ),
               ),
-            if (!isCollapsed) const SizedBox(height: 10),
+              const SizedBox(height: 10),
 
-            // Session List
-            Expanded(
-              child: sessions.isEmpty
-                  ? (isCollapsed
-                      ? const Center(
-                          child: Icon(Icons.chat_bubble_outline,
-                              color: kEiraTextSecondary))
-                      : const Center(
-                          child: Text("No recent sessions.",
-                              style: TextStyle(color: kEiraTextSecondary))))
-                  : ListView.builder(
-                      itemCount: sessions.length,
-                      itemBuilder: (context, index) {
-                        final session = sessions[index];
-                        return isCollapsed
-                            ? Tooltip(
-                                message: session.title,
-                                child: InkWell(
-                                  onTap: () => onSessionTapped(session.id),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 16.0),
-                                    child: const Center(
-                                      child: Icon(Icons.history,
-                                          color: kEiraTextSecondary),
+              // Session List
+              Expanded(
+                child: sessions.isEmpty
+                    ? const Center(
+                        child: Text("No recent sessions.",
+                            style: TextStyle(color: kEiraTextSecondary)))
+                    : ListView.builder(
+                        itemCount: sessions.length,
+                        itemBuilder: (context, index) {
+                          final session = sessions[index];
+                          return Dismissible(
+                            key: ValueKey(session.id),
+                            direction: DismissDirection.endToStart,
+                            confirmDismiss: (direction) async {
+                              return await onSessionDeleted(session.id);
+                            },
+                            background: Container(
+                              color: Colors.red.withOpacity(0.8),
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20.0),
+                              child: const Icon(Icons.delete,
+                                  color: Colors.white),
+                            ),
+                            child: ListTile(
+                              title: Text(
+                                session.title,
+                                style: const TextStyle(fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                  "Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
+                              leading: const Icon(Icons.history_outlined,
+                                  color: kEiraTextSecondary),
+                              onTap: () => onSessionTapped(session.id),
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'rename') {
+                                    onSessionEdited(session);
+                                  } else if (value == 'delete') {
+                                    onSessionDeleted(session.id);
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) =>
+                                    <PopupMenuEntry<String>>[
+                                  const PopupMenuItem<String>(
+                                    value: 'rename',
+                                    child: ListTile(
+                                      leading: Icon(Icons.edit_outlined,
+                                          size: 20),
+                                      title: Text('Rename'),
                                     ),
                                   ),
-                                ),
-                              )
-                            : Dismissible(
-                                key: ValueKey(session.id),
-                                direction: DismissDirection.endToStart,
-                                confirmDismiss: (direction) async {
-                                  return await onSessionDeleted(session.id);
-                                },
-                                background: Container(
-                                  color: Colors.red.withOpacity(0.8),
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 20.0),
-                                  child: const Icon(Icons.delete,
-                                      color: Colors.white),
-                                ),
-                                child: ListTile(
-                                  title: Text(
-                                    session.title,
-                                    style: const TextStyle(fontSize: 14),
-                                    overflow: TextOverflow.ellipsis,
+                                  const PopupMenuItem<String>(
+                                    value: 'delete',
+                                    child: ListTile(
+                                      leading: Icon(Icons.delete_outline,
+                                          color: Colors.red, size: 20),
+                                      title: Text('Delete',
+                                          style: TextStyle(
+                                              color: Colors.red)),
+                                    ),
                                   ),
-                                  subtitle: Text(
-                                      "Session from ${session.createdAt.toLocal().toString().substring(0, 10)}"),
-                                  leading: const Icon(Icons.history_outlined,
-                                      color: kEiraTextSecondary),
-                                  onTap: () => onSessionTapped(session.id),
-                                  trailing: PopupMenuButton<String>(
-                                    onSelected: (value) {
-                                      if (value == 'rename') {
-                                        onSessionEdited(session);
-                                      } else if (value == 'delete') {
-                                        onSessionDeleted(session.id);
-                                      }
-                                    },
-                                    itemBuilder: (BuildContext context) =>
-                                        <PopupMenuEntry<String>>[
-                                      const PopupMenuItem<String>(
-                                        value: 'rename',
-                                        child: ListTile(
-                                          leading: Icon(Icons.edit_outlined,
-                                              size: 20),
-                                          title: Text('Rename'),
-                                        ),
-                                      ),
-                                      const PopupMenuItem<String>(
-                                        value: 'delete',
-                                        child: ListTile(
-                                          leading: Icon(Icons.delete_outline,
-                                              color: Colors.red, size: 20),
-                                          title: Text('Delete',
-                                              style: TextStyle(
-                                                  color: Colors.red)),
-                                        ),
-                                      ),
-                                    ],
-                                    icon: const Icon(Icons.more_vert,
-                                        color: kEiraTextSecondary, size: 20),
-                                  ),
-                                ),
-                              );
-                      },
-                    ),
-            ),
-            const Divider(color: kEiraBorder, height: 1),
+                                ],
+                                icon: const Icon(Icons.more_vert,
+                                    color: kEiraTextSecondary, size: 20),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              const Divider(color: kEiraBorder, height: 1),
 
-            // Logout Button
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: isCollapsed
-                  ? null
-                  : const Text("Logout", style: TextStyle(color: Colors.red)),
-              onTap: () async {
-                await FirebaseAuth.instance.signOut();
-                if (context.mounted) {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(
-                        builder: (context) => const LoginScreen()),
-                    (Route<dynamic> route) => false,
-                  );
-                }
-              },
-            ),
+              // Logout Button
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.red),
+                title: const Text("Logout", 
+                    style: TextStyle(color: Colors.red)),
+                onTap: () async {
+                  await FirebaseAuth.instance.signOut();
+                  if (context.mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                          builder: (context) => const LoginScreen()),
+                      (Route<dynamic> route) => false,
+                    );
+                  }
+                },
+              ),
+            ] else if (isCollapsed && isDesktop) ...[
+              // Only show the toggle button when collapsed on desktop
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.menu_open, color: kEiraTextSecondary),
+                      onPressed: onToggle,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 }
-
 class WelcomeView extends StatelessWidget {
   final VoidCallback onCapabilityTap;
   final String currentModel;
