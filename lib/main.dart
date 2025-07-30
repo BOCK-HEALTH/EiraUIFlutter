@@ -376,23 +376,37 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _initializeCamera() async {
     try {
       final cameras = await availableCameras();
-      CameraDescription? selectedCamera =
-          cameras.isNotEmpty ? cameras.first : null;
-
-      if (selectedCamera != null) {
-        _cameraController = CameraController(
-          selectedCamera,
-          ResolutionPreset.medium,
-        );
-        _initializeCameraFuture = _cameraController!.initialize().then((_) {
-          if (mounted) {
-            setState(() {
-              _isCameraInitialized = true;
-            });
-          }
-        });
+      if (cameras.isEmpty) {
+        return; // No cameras available
       }
-    } catch (e) {}
+
+      // Find the front camera
+      CameraDescription? frontCamera;
+      for (var camera in cameras) {
+        if (camera.lensDirection == CameraLensDirection.front) {
+          frontCamera = camera;
+          break;
+        }
+      }
+
+      // Use the front camera if found, otherwise default to the first camera
+      final selectedCamera = frontCamera ?? cameras.first;
+
+      _cameraController = CameraController(
+        selectedCamera,
+        ResolutionPreset.medium,
+      );
+
+      _initializeCameraFuture = _cameraController!.initialize().then((_) {
+        if (mounted) {
+          setState(() {
+            _isCameraInitialized = true;
+          });
+        }
+      });
+    } catch (e) {
+      // Handle camera initialization errors
+    }
   }
 
   void _startNewChat() {
