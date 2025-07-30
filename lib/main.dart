@@ -588,43 +588,65 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _pickFiles() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
+  try {
+    if (kIsWeb) {
+      // Web-specific file picker
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: [
-          'pdf',
-          'jpg',
-          'jpeg',
-          'png',
-          'mp4',
-          'mp3',
-          'aac',
-          'wav',
-          'mov'
-        ],
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'aac', 'wav', 'mov'],
         allowMultiple: true,
       );
+      
       if (result != null) {
-        List<File> files = result.paths
-            .where((path) => path != null)
-            .map((path) => File(path!))
-            .where((file) => file.existsSync())
+        List<File> files = result.files
+            .where((file) => file.bytes != null)
+            .map((file) => File.fromRawPath(file.bytes!))
             .toList();
+            
         if (files.isNotEmpty) {
           if (mounted) {
             setState(() {
               _pendingFiles.addAll(files);
             });
             _showSnackBar(
-                '${files.length} file(s) added. Press send to share.',
-                Colors.green);
+              '${files.length} file(s) added. Press send to share.',
+              Colors.green,
+            );
           }
         }
       }
-    } catch (e) {
-      _showErrorDialog('Failed to pick files: $e');
+    } else {
+      // Mobile/desktop file picker
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'aac', 'wav', 'mov'],
+        allowMultiple: true,
+      );
+      
+      if (result != null) {
+        List<File> files = result.paths
+            .where((path) => path != null)
+            .map((path) => File(path!))
+            .where((file) => file.existsSync())
+            .toList();
+            
+        if (files.isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              _pendingFiles.addAll(files);
+            });
+            _showSnackBar(
+              '${files.length} file(s) added. Press send to share.',
+              Colors.green,
+            );
+          }
+        }
+      }
     }
+  } catch (e) {
+    _showErrorDialog('Failed to pick files: $e');
   }
+}
 
   void _addMessage(String text, bool isUser, [List<File>? attachments]) {
     if (mounted) {
@@ -2181,7 +2203,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
     }
   }
 
-  @override
+    @override
   Widget build(BuildContext context) {
     final bool isMobile = ResponsiveUtils.isMobile(context);
     final bool isWeb = kIsWeb;
@@ -2195,6 +2217,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Text input field with send button
           Container(
             constraints: const BoxConstraints(maxWidth: 800),
             decoration: BoxDecoration(
@@ -2245,7 +2268,9 @@ class _ChatInputAreaState extends State<ChatInputArea> {
               ],
             ),
           ),
-          if (!isWeb && isMobile) ...[
+          
+          // Action buttons row (always visible for web, mobile shows differently)
+          if (isWeb || isMobile) ...[
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -2309,6 +2334,8 @@ class _ChatInputAreaState extends State<ChatInputArea> {
       ),
     );
   }
+
+  
 }
 
 class VideoRecordingPreview extends StatelessWidget {
