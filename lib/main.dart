@@ -373,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {}
   }
 
-  Future<void> _initializeCamera() async {
+ Future<void> _initializeCamera() async {
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
