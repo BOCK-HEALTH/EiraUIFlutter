@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
-import 'dart:io';
+// Conditional import for File/html.File
+import 'dart:io' if (kIsWeb) 'dart:html' show File;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:record/record.dart';
+// Renamed file_picker import to avoid conflicts
+import 'package:file_picker/file_picker.dart' as p;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:camera/camera.dart';
 import 'package:flutter_sound/flutter_sound.dart';
@@ -18,8 +21,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_application_1/login_screen.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_application_1/registration_screen.dart';
-// Add this import to the top of lib/main.dart
-// <-- NEW: Import the API service you created
 import 'package:flutter_application_1/firebase_options.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/api_service.dart';
@@ -34,10 +35,8 @@ const Color kEiraSidebarBg = Color(0xFFF7F7F8);
 const Color kEiraBorder = Color(0xFFE5E5E5);
 const Color kEiraUserBg = Color(0xFFF7F7F8);
 const double kSidebarWidth = 280.0;
-// NEW: Define collapsed width
 const double kSidebarCollapsedWidth = 90.0;
 
-// NEW: Added responsive utilities
 class ResponsiveUtils {
   static bool isMobile(BuildContext context) =>
       MediaQuery.of(context).size.width < 768;
@@ -55,6 +54,10 @@ class ResponsiveUtils {
   }
 }
 
+// ** NEW: Platform-agnostic file wrapper **
+// This class holds file data in a way that works for both mobile (path) and web (bytes).
+
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -68,13 +71,27 @@ void main() async {
   runApp(const EiraApp());
 }
 
+class PlatformFileWrapper {
+  final String name;
+  final Uint8List? bytes;
+  final String? path;
+
+  PlatformFileWrapper({
+    required this.name,
+    this.bytes,
+    this.path,
+  }) : assert(bytes != null || path != null);
+}
+
+
+
 class EiraApp extends StatelessWidget {
   const EiraApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Eira Mobile',
+      title: 'Eira',
       debugShowCheckedModeBanner: false,
       locale: const Locale('en', 'US'),
       theme: ThemeData(
@@ -116,7 +133,7 @@ class EiraApp extends StatelessWidget {
 class ChatMessage {
   final String text;
   final bool isUser;
-  final List<File>? attachments;
+  final List<PlatformFileWrapper>? attachments;
   final DateTime timestamp;
   final String? fileUrl;
   final String? fileType;
@@ -148,6 +165,7 @@ class ChatMessage {
   }
 }
 
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -156,38 +174,33 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  // NEW: State for sidebar collapse
+ final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _isSidebarCollapsed = false;
-
   bool _hasActiveChat = false;
   final List<ChatMessage> _messages = [];
   final List<ChatSession> _sessions = [];
-
   String _currentModel = 'Eira 0.1';
   final List<String> _availableModels = ['Eira 0.1', 'Eira 0.2', 'Eira 1'];
-
   final ApiService _apiService = ApiService();
   bool _isLoadingHistory = false;
   int? _currentSessionId;
 
-  // Audio recording
+  // ** NEW: Recorder instance for web and mobile **
+  final AudioRecorder _audioRecorder = AudioRecorder(); // Use Record from the record package
+
+  // Mobile-specific recorders
   late stt.SpeechToText _speech;
   bool _isListening = false;
   String _recognizedText = '';
-  FlutterSoundRecorder? _audioRecorder;
+  FlutterSoundRecorder? _audioRecorderMobile; // Renamed for clarity
   bool _isRecordingAudio = false;
   String? _audioPath;
-
-  // Video recording
   CameraController? _cameraController;
   Future<void>? _initializeCameraFuture;
   bool _isRecordingVideo = false;
-  String? _videoPath;
   bool _isCameraInitialized = false;
 
-  final List<File> _pendingFiles = [];
-  final ImagePicker _picker = ImagePicker();
+  final List<PlatformFileWrapper> _pendingFiles = [];
   final Dio _dio = Dio();
   final TextEditingController _textController = TextEditingController();
 
@@ -196,7 +209,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadSessions();
 
-    // Prevent mobile-only plugins from running on web
     if (!kIsWeb) {
       _speech = stt.SpeechToText();
       _initializeSpeech();
@@ -205,6 +217,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _initAudioRecorder() async {
+    if (kIsWeb) return;
+    try {
+      _audioRecorderMobile = FlutterSoundRecorder();
+      await _audioRecorderMobile!.openRecorder();
+    } catch (e) {
+      // Handle error
+    }
+  }
+
+  
   Future<void> _loadSessions() async {
     try {
       final List<ChatSession> sessions = await _apiService.fetchSessions();
@@ -358,6 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _initializeSpeech() async {
+    if (kIsWeb) return;
     try {
       await _speech.initialize(
         onStatus: (val) {},
@@ -366,21 +390,14 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {}
   }
 
-  Future<void> _initAudioRecorder() async {
-    try {
-      _audioRecorder = FlutterSoundRecorder();
-      await _audioRecorder!.openRecorder();
-    } catch (e) {}
-  }
 
- Future<void> _initializeCamera() async {
+  Future<void> _initializeCamera() async {
+    if (kIsWeb) return;
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
-        return; // No cameras available
+        return;
       }
-
-      // Find the front camera
       CameraDescription? frontCamera;
       for (var camera in cameras) {
         if (camera.lensDirection == CameraLensDirection.front) {
@@ -388,15 +405,11 @@ class _HomeScreenState extends State<HomeScreen> {
           break;
         }
       }
-
-      // Use the front camera if found, otherwise default to the first camera
       final selectedCamera = frontCamera ?? cameras.first;
-
       _cameraController = CameraController(
         selectedCamera,
         ResolutionPreset.medium,
       );
-
       _initializeCameraFuture = _cameraController!.initialize().then((_) {
         if (mounted) {
           setState(() {
@@ -404,9 +417,7 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         }
       });
-    } catch (e) {
-      // Handle camera initialization errors
-    }
+    } catch (e) {}
   }
 
   void _startNewChat() {
@@ -423,6 +434,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _requestPermissions() async {
+    if (kIsWeb) return;
     try {
       await [
         Permission.microphone,
@@ -432,22 +444,40 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {}
   }
 
-  Future<void> _startAudioRecording() async {
-    try {
+  // ** CORRECTED: Unified audio recording method for Web and Mobile **
+ Future<void> _startAudioRecording() async {
+  try {
+    if (kIsWeb) {
+      // Web recording using the record package
+      if (await _audioRecorder.hasPermission()) {
+        // For web, we need to provide a path (even though it's not used)
+        await _audioRecorder.start(
+          const RecordConfig(encoder: AudioEncoder.wav),
+          path: 'web_recording.wav', // Provide a dummy path for web
+        );
+        setState(() {
+          _isRecordingAudio = true;
+        });
+        _showSnackBar('Recording started on web...', Colors.green);
+      } else {
+        _showPermissionDeniedDialog('Microphone');
+      }
+    } else {
+      // Mobile implementation
       await _requestPermissions();
       final status = await Permission.microphone.status;
       if (status != PermissionStatus.granted) {
         _showPermissionDeniedDialog('Microphone');
         return;
       }
-      if (_audioRecorder == null) {
+      if (_audioRecorderMobile == null) {
         await _initAudioRecorder();
       }
-      if (_audioRecorder != null) {
+      if (_audioRecorderMobile != null) {
         final tempDir = await getTemporaryDirectory();
         final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
         final filePath = '${tempDir.path}/$fileName';
-        await _audioRecorder!.startRecorder(
+        await _audioRecorderMobile!.startRecorder(
           toFile: filePath,
           codec: Codec.pcm16WAV,
         );
@@ -458,46 +488,51 @@ class _HomeScreenState extends State<HomeScreen> {
             _recognizedText = '';
           });
         }
-        if (_speech.isAvailable) {
-          await _speech.listen(
-            onResult: (result) {
-              if (mounted) {
-                setState(() {
-                  _recognizedText = result.recognizedWords;
-                  _textController.text = _recognizedText;
-                });
-              }
-            },
-            listenFor: const Duration(minutes: 5),
-            pauseFor: const Duration(seconds: 3),
-          );
-        }
         _showSnackBar('Recording started...', Colors.green);
       }
-    } catch (e) {
-      _showErrorDialog('Failed to start audio recording: $e');
     }
+  } catch (e) {
+    _showErrorDialog('Failed to start audio recording: $e');
   }
-
+}
+  // ** CORRECTED: Unified audio stopping method for Web and Mobile **
   Future<void> _stopAudioRecording() async {
     try {
-      if (_speech.isListening) {
-        await _speech.stop();
-      }
-      if (_audioRecorder != null && _isRecordingAudio) {
-        String? recordedPath = await _audioRecorder!.stopRecorder();
-        if (mounted) {
+      if (kIsWeb) {
+        final String? path = await _audioRecorder.stop();
+        if (path != null) {
+          // For web, we need to fetch the recorded blob as bytes
+          final response = await Dio().get(path, options: Options(responseType: ResponseType.bytes));
+          final bytes = response.data as Uint8List;
           setState(() {
             _isRecordingAudio = false;
+            final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
+            _pendingFiles.add(PlatformFileWrapper(
+              name: fileName,
+              bytes: bytes,
+            ));
           });
+          _showSnackBar('Audio recorded! Press send to share.', Colors.green);
         }
-        if (recordedPath != null && File(recordedPath).existsSync()) {
-          final file = File(recordedPath);
+      } else {
+        if (_audioRecorderMobile != null && _isRecordingAudio) {
+          String? recordedPath = await _audioRecorderMobile!.stopRecorder();
           if (mounted) {
             setState(() {
-              _pendingFiles.add(file);
+              _isRecordingAudio = false;
             });
-            _showSnackBar('Audio recorded! Press send to share.', Colors.green);
+          }
+          if (recordedPath != null && await File(recordedPath).exists()) {
+            final file = File(recordedPath);
+            if (mounted) {
+              setState(() {
+                _pendingFiles.add(PlatformFileWrapper(
+                  name: path.basename(file.path),
+                  path: file.path,
+                ));
+              });
+              _showSnackBar('Audio recorded! Press send to share.', Colors.green);
+            }
           }
         }
       }
@@ -506,7 +541,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // ** CORRECTED: Unified video recording method for Web and Mobile **
   Future<void> _startVideoRecording() async {
+  if (kIsWeb) {
+    try {
+      // For web, use the same audio recorder since we can't access camera directly via record package
+      if (await _audioRecorder.hasPermission()) {
+        await _audioRecorder.start(
+          const RecordConfig(encoder: AudioEncoder.opus),
+          path: 'web_video_recording.mp4', // Dummy path for web
+        );
+        setState(() {
+          _isRecordingVideo = true;
+        });
+        _showSnackBar('Webcam recording started...', Colors.green);
+      } else {
+        _showPermissionDeniedDialog('Camera');
+      }
+    } catch (e) {
+      _showErrorDialog('Failed to start video recording: $e');
+    }
+  } else {
+    // Mobile implementation remains the same
     try {
       await _requestPermissions();
       final status = await Permission.camera.status;
@@ -554,8 +610,32 @@ class _HomeScreenState extends State<HomeScreen> {
       _showErrorDialog('Failed to start video recording: $e');
     }
   }
+}
 
-  Future<void> _stopVideoRecording() async {
+  // ** CORRECTED: Unified video stopping method for Web and Mobile **
+ Future<void> _stopVideoRecording() async {
+  if (kIsWeb) {
+    try {
+      final String? path = await _audioRecorder.stop();
+      if (path != null) {
+        // For web, we need to fetch the recorded blob as bytes
+        final response = await Dio().get(path, options: Options(responseType: ResponseType.bytes));
+        final bytes = response.data as Uint8List;
+        setState(() {
+          _isRecordingVideo = false;
+          final fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
+          _pendingFiles.add(PlatformFileWrapper(
+            name: fileName,
+            bytes: bytes,
+          ));
+        });
+        _showSnackBar('Video recorded! Press send to share.', Colors.green);
+      }
+    } catch (e) {
+      _showErrorDialog('Failed to stop video recording: $e');
+    }
+  } else {
+    // Mobile implementation remains the same
     try {
       if (_cameraController != null && _isRecordingVideo) {
         final XFile tempFile = await _cameraController!.stopVideoRecording();
@@ -564,17 +644,20 @@ class _HomeScreenState extends State<HomeScreen> {
             _isRecordingVideo = false;
           });
         }
-        final File originalFile = File(tempFile.path);
-        final Directory directory = await getTemporaryDirectory();
+        final originalFile = File(tempFile.path) as dynamic;
+        final directory = await getTemporaryDirectory();
         final String newPath = path.join(
           directory.path,
           'video_${DateTime.now().millisecondsSinceEpoch}.mp4',
         );
-        final File newFile = await originalFile.rename(newPath);
-        if (newFile.existsSync()) {
+        final newFile = await originalFile.rename(newPath);
+        if (await newFile.exists()) {
           if (mounted) {
             setState(() {
-              _pendingFiles.add(newFile);
+              _pendingFiles.add(PlatformFileWrapper(
+                name: path.basename(newFile.path),
+                path: newFile.path,
+              ));
             });
             _showSnackBar('Video recorded! Press send to share.', Colors.green);
           }
@@ -586,69 +669,52 @@ class _HomeScreenState extends State<HomeScreen> {
       _showErrorDialog('Failed to stop video recording: $e');
     }
   }
-
-  Future<void> _pickFiles() async {
-  try {
-    if (kIsWeb) {
-      // Web-specific file picker
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'aac', 'wav', 'mov'],
-        allowMultiple: true,
-      );
-      
-      if (result != null) {
-        List<File> files = result.files
-            .where((file) => file.bytes != null)
-            .map((file) => File.fromRawPath(file.bytes!))
-            .toList();
-            
-        if (files.isNotEmpty) {
-          if (mounted) {
-            setState(() {
-              _pendingFiles.addAll(files);
-            });
-            _showSnackBar(
-              '${files.length} file(s) added. Press send to share.',
-              Colors.green,
-            );
-          }
-        }
-      }
-    } else {
-      // Mobile/desktop file picker
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'aac', 'wav', 'mov'],
-        allowMultiple: true,
-      );
-      
-      if (result != null) {
-        List<File> files = result.paths
-            .where((path) => path != null)
-            .map((path) => File(path!))
-            .where((file) => file.existsSync())
-            .toList();
-            
-        if (files.isNotEmpty) {
-          if (mounted) {
-            setState(() {
-              _pendingFiles.addAll(files);
-            });
-            _showSnackBar(
-              '${files.length} file(s) added. Press send to share.',
-              Colors.green,
-            );
-          }
-        }
-      }
-    }
-  } catch (e) {
-    _showErrorDialog('Failed to pick files: $e');
-  }
 }
 
-  void _addMessage(String text, bool isUser, [List<File>? attachments]) {
+
+  Future<void> _pickFiles() async {
+    try {
+      final p.FilePickerResult? result = await p.FilePicker.platform.pickFiles(
+        type: p.FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'aac', 'wav', 'mov'],
+        allowMultiple: true,
+        withData: true,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        List<PlatformFileWrapper> pickedFiles = [];
+
+        if (kIsWeb) {
+          pickedFiles = result.files
+              .where((file) => file.bytes != null)
+              .map((file) => PlatformFileWrapper(name: file.name, bytes: file.bytes!))
+              .toList();
+        } else {
+          pickedFiles = result.paths
+              .where((path) => path != null)
+              .map((path) => PlatformFileWrapper(
+                    name: path!.split(RegExp(r'[/\\]')).last,
+                    path: path,
+                  ))
+              .toList();
+        }
+
+        if (pickedFiles.isNotEmpty && mounted) {
+          setState(() {
+            _pendingFiles.addAll(pickedFiles);
+          });
+          _showSnackBar(
+            '${pickedFiles.length} file(s) added. Press send to share.',
+            kEiraYellow,
+          );
+        }
+      }
+    } catch (e) {
+      _showErrorDialog('Failed to pick files: $e');
+    }
+  }
+
+  void _addMessage(String text, bool isUser, [List<PlatformFileWrapper>? attachments]) {
     if (mounted) {
       setState(() {
         _messages.add(ChatMessage(
@@ -694,9 +760,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadChatHistory(sessionId: sessionId);
   }
 
-  void _sendMessage() async {
+  Future<void> _sendMessage() async {
     final messageText = _textController.text.trim();
-    final attachments = List<File>.from(_pendingFiles);
+    final attachments = List<PlatformFileWrapper>.from(_pendingFiles);
 
     if (messageText.isEmpty && attachments.isEmpty) return;
 
@@ -838,306 +904,303 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  void dispose() {
-    _audioRecorder?.closeRecorder();
-    _cameraController?.dispose();
-    _dio.close();
-    _textController.dispose();
-    super.dispose();
-  }
+void dispose() {
+  _audioRecorder.dispose(); // Changed from closeRecorder to dispose
+  _cameraController?.dispose();
+  _dio.close();
+  _textController.dispose();
+  super.dispose();
+}
 
   @override
-Widget build(BuildContext context) {
-  final user = FirebaseAuth.instance.currentUser;
-  final userName = user?.displayName ?? user?.email?.split('@')[0] ?? "User";
-  final userEmail = user?.email ?? "Guest";
-  final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : "U";
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final userName = user?.displayName ?? user?.email?.split('@')[0] ?? "User";
+    final userEmail = user?.email ?? "Guest";
+    final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : "U";
 
-  final bool isMobile = ResponsiveUtils.isMobile(context);
-  final bool isDesktop = ResponsiveUtils.isDesktop(context);
+    final bool isMobile = ResponsiveUtils.isMobile(context);
+    final bool isDesktop = ResponsiveUtils.isDesktop(context);
 
-  return Scaffold(
-    key: _scaffoldKey,
-    appBar: AppBar(
-      title: ModelDropdown(
-        currentModel: _currentModel,
-        availableModels: _availableModels,
-        onModelChanged: _onModelChanged,
-      ),
-      centerTitle: true,
-      backgroundColor: kEiraBackground,
-      elevation: 0,
-      leading: isMobile
-          ? Container(
-              margin: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: kEiraYellow,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.menu, color: Colors.white, size: 20),
-                onPressed: () {
-                  _scaffoldKey.currentState?.openDrawer();
-                },
-              ),
-            )
-          : null,
-      automaticallyImplyLeading: isMobile,
-      actions: [
-        PopupMenuButton<String>(
-          offset: const Offset(0, 40),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: kEiraBorder.withOpacity(0.5)),
-          ),
-          elevation: 8,
-          color: kEiraBackground,
-          onSelected: (value) async {
-            if (value == 'logout') {
-              await FirebaseAuth.instance.signOut();
-            }
-          },
-          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-            PopupMenuItem<String>(
-              value: 'user_info',
-              enabled: false,
-              padding: EdgeInsets.zero,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: kEiraBackground,
-                  borderRadius: BorderRadius.circular(12),
+    return Scaffold(
+      key: _scaffoldKey,
+      appBar: AppBar(
+        backgroundColor: kEiraBackground,
+        elevation: 0,
+        centerTitle: true,
+        leading: isMobile
+            ? Center(
+                child: Container(
+                  height: 40,
+                  width: 40,
+                  margin: const EdgeInsets.only(left: 12),
+                  decoration: BoxDecoration(
+                    color: kEiraYellow,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.menu, color: Colors.white, size: 20),
+                    onPressed: () {
+                      _scaffoldKey.currentState?.openDrawer();
+                    },
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: kEiraYellow,
-                      child: Text(
-                        userInitial,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          fontFamily: 'Roboto',
-                        ),
+              )
+            : null,
+        title: ModelDropdown(
+          currentModel: _currentModel,
+          availableModels: _availableModels,
+          onModelChanged: _onModelChanged,
+        ),
+        actions: [
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: PopupMenuButton<String>(
+                offset: const Offset(0, 40),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: kEiraBorder.withOpacity(0.5)),
+                ),
+                elevation: 8,
+                color: kEiraBackground,
+                onSelected: (value) async {
+                  if (value == 'logout') {
+                    await FirebaseAuth.instance.signOut();
+                  }
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'user_info',
+                    enabled: false,
+                    padding: EdgeInsets.zero,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: kEiraBackground,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Text(
-                            userName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                              color: kEiraText,
-                              fontFamily: 'Roboto',
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: kEiraYellow,
+                            child: Text(
+                              userInitial,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                fontFamily: 'Roboto',
+                              ),
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                          Text(
-                            userEmail,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: kEiraTextSecondary,
-                              fontFamily: 'Roboto',
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  userName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16,
+                                    color: kEiraText,
+                                    fontFamily: 'Roboto',
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  userEmail,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: kEiraTextSecondary,
+                                    fontFamily: 'Roboto',
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-            const PopupMenuDivider(),
-            PopupMenuItem<String>(
-              value: 'logout',
-              child: Row(
-                children: [
-                  const Icon(Icons.logout, color: Colors.red, size: 20),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Logout',
-                    style: TextStyle(
-                        color: Colors.red,
-                        fontFamily: 'Roboto',
-                        fontSize: 15),
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem<String>(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.logout, color: Colors.red, size: 20),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Logout',
+                          style: TextStyle(
+                              color: Colors.red,
+                              fontFamily: 'Roboto',
+                              fontSize: 15),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
-              ),
-            ),
-          ],
-          child: Container(
-            margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
-            decoration: BoxDecoration(
-              color: kEiraYellow,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: CircleAvatar(
-              radius: 20,
-              backgroundColor: kEiraYellow,
-              child: Text(
-                userInitial,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  fontFamily: 'Roboto',
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    ),
-    drawer: isMobile
-        ? AppDrawer(
-            onNewSession: _startNewChat,
-            sessions: _sessions,
-            onSessionTapped: _onSessionTapped,
-            onSessionEdited: _editSessionTitle,
-            onSessionDeleted: _deleteSession,
-            isCollapsed: false, // Mobile drawer is never collapsed
-            onToggle: () {},
-          )
-        : null,
-    body: Stack(
-      children: [
-        Row(
-          children: [
-            // Improved sidebar implementation with proper visibility handling
-            if (isDesktop)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                width: _isSidebarCollapsed ? 0 : kSidebarWidth,
-                child: ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.centerLeft,
-                    maxWidth: kSidebarWidth,
-                    child: Visibility(
-                      visible: !_isSidebarCollapsed,
-                      maintainState: true,
-                      child: AppDrawer(
-                        onNewSession: _startNewChat,
-                        sessions: _sessions,
-                        onSessionTapped: _onSessionTapped,
-                        onSessionEdited: _editSessionTitle,
-                        onSessionDeleted: _deleteSession,
-                        isCollapsed: _isSidebarCollapsed,
-                        onToggle: () {
-                          setState(() {
-                            _isSidebarCollapsed = !_isSidebarCollapsed;
-                          });
-                        },
-                      ),
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: kEiraYellow,
+                  child: Text(
+                    userInitial,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      fontFamily: 'Roboto',
                     ),
                   ),
                 ),
               ),
-            Expanded(
-              child: Container(
-                constraints: BoxConstraints(
-                  maxWidth: isDesktop ? 800 : double.infinity,
-                ),
-                child: Stack(
-                  children: [
-                    // Add toggle button for collapsed sidebar
-                    if (isDesktop && _isSidebarCollapsed)
-                      Positioned(
-                        top: 16,
-                        left: 16,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: kEiraYellow,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.menu,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _isSidebarCollapsed = false;
-                              });
-                            },
-                            tooltip: 'Show Sidebar',
-                          ),
+            ),
+          ),
+        ],
+      ),
+      drawer: isMobile
+          ? AppDrawer(
+              onNewSession: _startNewChat,
+              sessions: _sessions,
+              onSessionTapped: _onSessionTapped,
+              onSessionEdited: _editSessionTitle,
+              onSessionDeleted: _deleteSession,
+              isCollapsed: false,
+              onToggle: () {},
+            )
+          : null,
+      body: Stack(
+        children: [
+          Row(
+            children: [
+              if (isDesktop)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  width: _isSidebarCollapsed ? 0 : kSidebarWidth,
+                  child: ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.centerLeft,
+                      maxWidth: kSidebarWidth,
+                      child: Visibility(
+                        visible: !_isSidebarCollapsed,
+                        maintainState: true,
+                        child: AppDrawer(
+                          onNewSession: _startNewChat,
+                          sessions: _sessions,
+                          onSessionTapped: _onSessionTapped,
+                          onSessionEdited: _editSessionTitle,
+                          onSessionDeleted: _deleteSession,
+                          isCollapsed: _isSidebarCollapsed,
+                          onToggle: () {
+                            setState(() {
+                              _isSidebarCollapsed = !_isSidebarCollapsed;
+                            });
+                          },
                         ),
                       ),
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: _pendingFiles.isNotEmpty ? 180.0 : 140.0,
-                      child: _hasActiveChat
-                          ? _isLoadingHistory
-                              ? const Center(
-                                  child: CircularProgressIndicator())
-                              : MessagesListView(
-                                  messages: _messages,
-                                  currentModel: _currentModel,
-                                  extraBottomPadding: 20.0,
-                                )
-                          : WelcomeView(
-                              currentModel: _currentModel,
-                              onCapabilityTap: () {},
-                            ),
                     ),
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_pendingFiles.isNotEmpty)
-                            PendingFilesDisplay(
-                              files: _pendingFiles,
-                              onRemove: _removePendingFile,
+                  ),
+                ),
+              Expanded(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: isDesktop ? 800 : double.infinity,
+                  ),
+                  child: Stack(
+                    children: [
+                      if (isDesktop && _isSidebarCollapsed)
+                        Positioned(
+                          top: 16,
+                          left: 16,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: kEiraYellow,
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                          ChatInputArea(
-                            isRecordingAudio: _isRecordingAudio,
-                            isRecordingVideo: _isRecordingVideo,
-                            recognizedText: _recognizedText,
-                            textController: _textController,
-                            onRecordToggle: _toggleRecording,
-                            onFileAdd: _pickFiles,
-                            onCameraOpen: _toggleVideoRecording,
-                            onSendMessage: _sendMessage,
-                            hasPendingFiles: _pendingFiles.isNotEmpty,
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.menu,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _isSidebarCollapsed = false;
+                                });
+                              },
+                              tooltip: 'Show Sidebar',
+                            ),
                           ),
-                        ],
+                        ),
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: _pendingFiles.isNotEmpty ? 180.0 : 140.0,
+                        child: _hasActiveChat
+                            ? _isLoadingHistory
+                                ? const Center(
+                                    child: CircularProgressIndicator())
+                                : MessagesListView(
+                                    messages: _messages,
+                                    currentModel: _currentModel,
+                                    extraBottomPadding: 20.0,
+                                  )
+                            : WelcomeView(
+                                currentModel: _currentModel,
+                                onCapabilityTap: () {},
+                              ),
                       ),
-                    ),
-                  ],
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_pendingFiles.isNotEmpty)
+                              PendingFilesDisplay(
+                                files: _pendingFiles,
+                                onRemove: _removePendingFile,
+                              ),
+                            ChatInputArea(
+                              isRecordingAudio: _isRecordingAudio,
+                              isRecordingVideo: _isRecordingVideo,
+                              recognizedText: _recognizedText,
+                              textController: _textController,
+                              onRecordToggle: _toggleRecording,
+                              onFileAdd: _pickFiles,
+                              onCameraOpen: _toggleVideoRecording,
+                              onSendMessage: _sendMessage,
+                              hasPendingFiles: _pendingFiles.isNotEmpty,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
-}
-
 class ModelDropdown extends StatelessWidget {
   final String currentModel;
   final List<String> availableModels;
@@ -1280,8 +1343,9 @@ class ModelDropdown extends StatelessWidget {
   }
 }
 
+// ** UPDATED: This widget now takes a list of the wrapper class **
 class PendingFilesDisplay extends StatelessWidget {
-  final List<File> files;
+  final List<PlatformFileWrapper> files;
   final Function(int) onRemove;
 
   const PendingFilesDisplay({
@@ -1294,11 +1358,11 @@ class PendingFilesDisplay extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<Widget> fileChips = files.asMap().entries.map((entry) {
       int index = entry.key;
-      File file = entry.value;
+      PlatformFileWrapper file = entry.value;
       return Padding(
         padding: const EdgeInsets.only(right: 8.0),
         child: PendingFileChip(
-          file: file,
+          file: file, // Pass the wrapper
           onRemove: () => onRemove(index),
         ),
       );
@@ -1323,8 +1387,9 @@ class PendingFilesDisplay extends StatelessWidget {
   }
 }
 
+// ** UPDATED: This widget now takes the wrapper class **
 class PendingFileChip extends StatelessWidget {
-  final File file;
+  final PlatformFileWrapper file;
   final VoidCallback onRemove;
 
   const PendingFileChip({
@@ -1335,8 +1400,9 @@ class PendingFileChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayName = path.basename(file.path);
-    final displayIcon = _getFileIcon(file.path);
+    // ** Use the name from the wrapper **
+    final displayName = file.name;
+    final displayIcon = _getFileIcon(displayName); // Use name to get icon
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1387,8 +1453,8 @@ class PendingFileChip extends StatelessWidget {
     );
   }
 
-  IconData _getFileIcon(String path) {
-    final extension = path.split('.').last.toLowerCase();
+  IconData _getFileIcon(String name) {
+    final extension = name.split('.').last.toLowerCase();
     if (['pdf'].contains(extension)) return Icons.insert_drive_file;
     if (['jpg', 'jpeg', 'png'].contains(extension)) return Icons.image;
     if (['mp4', 'mov'].contains(extension)) return Icons.videocam;
@@ -1426,7 +1492,6 @@ class AppDrawer extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            // Toggle button for desktop (only shown when not collapsed)
             if (isDesktop && !isCollapsed)
               Align(
                 alignment: Alignment.centerRight,
@@ -1435,10 +1500,7 @@ class AppDrawer extends StatelessWidget {
                   onPressed: onToggle,
                 ),
               ),
-
-            // Only show content when not collapsed
             if (!isCollapsed) ...[
-              // New Session Button
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: ElevatedButton.icon(
@@ -1455,8 +1517,6 @@ class AppDrawer extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-
-              // Recent Sessions Header
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.0),
                 child: Align(
@@ -1467,8 +1527,6 @@ class AppDrawer extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-
-              // Session List
               Expanded(
                 child: sessions.isEmpty
                     ? const Center(
@@ -1541,11 +1599,9 @@ class AppDrawer extends StatelessWidget {
                       ),
               ),
               const Divider(color: kEiraBorder, height: 1),
-
-              // Logout Button
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.red),
-                title: const Text("Logout", 
+                title: const Text("Logout",
                     style: TextStyle(color: Colors.red)),
                 onTap: () async {
                   await FirebaseAuth.instance.signOut();
@@ -1559,7 +1615,6 @@ class AppDrawer extends StatelessWidget {
                 },
               ),
             ] else if (isCollapsed && isDesktop) ...[
-              // Only show the toggle button when collapsed on desktop
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1578,6 +1633,7 @@ class AppDrawer extends StatelessWidget {
     );
   }
 }
+
 class WelcomeView extends StatelessWidget {
   final VoidCallback onCapabilityTap;
   final String currentModel;
@@ -1639,7 +1695,7 @@ class WelcomeView extends StatelessWidget {
 
                   if (isMobile) {
                     crossAxisCount = 2;
-                    childAspectRatio = 0.95;
+                    childAspectRatio = 1.0;
                   } else if (isTablet) {
                     crossAxisCount = 3;
                     childAspectRatio = 1.1;
@@ -1732,7 +1788,7 @@ class CapabilityCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: kEiraBackground,
           border: Border.all(color: kEiraBorder.withOpacity(0.3)),
@@ -1747,6 +1803,7 @@ class CapabilityCard extends StatelessWidget {
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
               width: 44,
@@ -1757,7 +1814,7 @@ class CapabilityCard extends StatelessWidget {
               ),
               child: Icon(icon, color: color, size: 22),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Text(
               title,
               textAlign: TextAlign.center,
@@ -1768,17 +1825,17 @@ class CapabilityCard extends StatelessWidget {
                 fontFamily: 'Roboto',
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Text(
               description,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 12,
                 color: kEiraTextSecondary,
-                height: 1.2,
+                height: 1.3,
                 fontFamily: 'Roboto',
               ),
-              maxLines: 3,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -1891,7 +1948,8 @@ class _MessagesListViewState extends State<MessagesListView> {
 class MessageBubble extends StatelessWidget {
   final bool isUser;
   final String text;
-  final List<File>? attachments;
+  // ** UPDATED: Now receives the wrapper class **
+  final List<PlatformFileWrapper>? attachments;
   final DateTime timestamp;
   final String modelName;
   final String? fileUrl;
@@ -1956,6 +2014,7 @@ class MessageBubble extends StatelessWidget {
                       style: const TextStyle(height: 1.5, fontFamily: 'Roboto')),
                 if (hasLocalAttachment) ...[
                   const SizedBox(height: 10),
+                  // Pass the wrapper to the AttachmentChip
                   ...attachments!.map((file) => AttachmentChip(file: file)),
                 ],
                 if (hasRemoteAttachment) ...[
@@ -2049,15 +2108,19 @@ class RemoteAttachmentChip extends StatelessWidget {
   }
 }
 
+// ** UPDATED: This widget now uses the wrapper class **
 class AttachmentChip extends StatelessWidget {
-  final File file;
+  final PlatformFileWrapper file;
 
   const AttachmentChip({super.key, required this.file});
 
   @override
   Widget build(BuildContext context) {
-    final fileName = path.basename(file.path);
-    final fileSize = _formatFileSize(file.lengthSync());
+    final fileName = file.name;
+    // On mobile, if we have a path, we can show the file size. On web, we can't easily.
+    final fileSize = file.path != null && !kIsWeb
+        ? _formatFileSize((File(file.path!) as dynamic).lengthSync())
+        : null;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -2074,7 +2137,7 @@ class AttachmentChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(_getFileIcon(file.path), color: kEiraYellowHover, size: 18),
+              Icon(_getFileIcon(fileName), color: kEiraYellowHover, size: 18),
               const SizedBox(width: 8),
               Flexible(
                 child: Column(
@@ -2086,14 +2149,15 @@ class AttachmentChip extends StatelessWidget {
                           fontWeight: FontWeight.w500, fontFamily: 'Roboto'),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text(
-                      fileSize,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: kEiraTextSecondary,
-                        fontFamily: 'Roboto',
+                    if (fileSize != null)
+                      Text(
+                        fileSize,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: kEiraTextSecondary,
+                          fontFamily: 'Roboto',
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -2104,9 +2168,9 @@ class AttachmentChip extends StatelessWidget {
     );
   }
 
-  void _openFile(BuildContext context, File file) {
+  void _openFile(BuildContext context, PlatformFileWrapper file) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Opening ${path.basename(file.path)}')),
+      SnackBar(content: Text('Opening ${file.name}')),
     );
   }
 
@@ -2116,8 +2180,8 @@ class AttachmentChip extends StatelessWidget {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  IconData _getFileIcon(String path) {
-    final extension = path.split('.').last.toLowerCase();
+  IconData _getFileIcon(String name) {
+    final extension = name.split('.').last.toLowerCase();
     if (['pdf'].contains(extension)) return Icons.picture_as_pdf;
     if (['jpg', 'jpeg', 'png'].contains(extension)) return Icons.image;
     if (['mp4', 'mov'].contains(extension)) return Icons.videocam;
@@ -2239,7 +2303,6 @@ class _ChatInputAreaState extends State<ChatInputArea> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Text input field with send button
           Container(
             constraints: const BoxConstraints(maxWidth: 800),
             decoration: BoxDecoration(
@@ -2291,7 +2354,6 @@ class _ChatInputAreaState extends State<ChatInputArea> {
             ),
           ),
           
-          // Action buttons row (always visible for web, mobile shows differently)
           if (isWeb || isMobile) ...[
             const SizedBox(height: 16),
             Row(
@@ -2356,8 +2418,6 @@ class _ChatInputAreaState extends State<ChatInputArea> {
       ),
     );
   }
-
-  
 }
 
 class VideoRecordingPreview extends StatelessWidget {

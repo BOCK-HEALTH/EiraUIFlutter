@@ -5,6 +5,7 @@ import 'package:flutter_application_1/main.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:mime/mime.dart';
 import 'dart:io';
+import 'dart:typed_data'; // For Uint8List
 
 class ChatSession {
   final int id;
@@ -44,7 +45,7 @@ class ApiService {
       print('Attempting to update session $sessionId with title: "$newTitle"');
       
       final response = await _dio.put(
-        '$_baseUrl/api/updateSession', // Correct endpoint
+        '$_baseUrl/api/updateSession',
         data: {
           'sessionId': sessionId,
           'title': newTitle
@@ -74,8 +75,8 @@ class ApiService {
       print('Attempting to delete session $sessionId');
       
       final response = await _dio.delete(
-        '$_baseUrl/api/deleteSession', // Correct endpoint
-        data: { 'sessionId': sessionId }, // Pass ID in the body
+        '$_baseUrl/api/deleteSession',
+        data: {'sessionId': sessionId},
         options: Options(
           headers: {
             'Authorization': 'Bearer $token',
@@ -167,19 +168,41 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> storeFileMessage(String message, File file, {int? sessionId}) async {
+  Future<Map<String, dynamic>> storeFileMessage(
+    String message,
+    PlatformFileWrapper file, { // Accepts the new wrapper class
+    int? sessionId,
+  }) async {
     final token = await _getIdToken();
     if (token == null) throw Exception("User not authenticated");
 
-    String fileName = file.path.split('/').last;
-    
+    final String fileName = file.name;
+    final String? mimeType = lookupMimeType(fileName, headerBytes: file.bytes);
+
+    MultipartFile multipartFile;
+
+    // Intellgently create the MultipartFile from either bytes (web) or path (mobile)
+    if (file.bytes != null) {
+      // This is a web file
+      multipartFile = MultipartFile.fromBytes(
+        file.bytes!,
+        filename: fileName,
+        contentType: mimeType != null ? MediaType.parse(mimeType) : null,
+      );
+    } else if (file.path != null) {
+      // This is a mobile/desktop file
+      multipartFile = await MultipartFile.fromFile(
+        file.path!,
+        filename: fileName,
+        contentType: mimeType != null ? MediaType.parse(mimeType) : null,
+      );
+    } else {
+      throw Exception("Invalid file provided. No bytes or path.");
+    }
+
     final Map<String, dynamic> formDataMap = {
       'message': message,
-      'file': await MultipartFile.fromFile(
-        file.path,
-        filename: fileName,
-        contentType: MediaType.parse(lookupMimeType(file.path) ?? 'application/octet-stream'),
-      ),
+      'file': multipartFile,
     };
 
     if (sessionId != null) {
@@ -197,8 +220,8 @@ class ApiService {
         ),
       );
       return response.data;
-    } catch (e) {
-      print("Error storing file message: $e");
+    } on DioException catch (e) {
+      print("Error storing file message: ${e.response?.data ?? e.message}");
       throw Exception("Failed to send file.");
     }
   }
