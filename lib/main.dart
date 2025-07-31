@@ -208,12 +208,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadSessions();
-
+   _initializeCamera();
     if (!kIsWeb) {
       _speech = stt.SpeechToText();
       _initializeSpeech();
       _initAudioRecorder();
-      _initializeCamera();
     }
   }
 
@@ -392,34 +391,52 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
   Future<void> _initializeCamera() async {
-    if (kIsWeb) return;
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        return;
-      }
-      CameraDescription? frontCamera;
-      for (var camera in cameras) {
-        if (camera.lensDirection == CameraLensDirection.front) {
-          frontCamera = camera;
-          break;
-        }
-      }
-      final selectedCamera = frontCamera ?? cameras.first;
-      _cameraController = CameraController(
-        selectedCamera,
-        ResolutionPreset.medium,
-      );
-      _initializeCameraFuture = _cameraController!.initialize().then((_) {
-        if (mounted) {
-          setState(() {
-            _isCameraInitialized = true;
-          });
-        }
-      });
-    } catch (e) {}
-  }
+  // --- MODIFICATION ---
+  // The 'if (kIsWeb) return;' check has been REMOVED.
+  try {
+    final cameras = await availableCameras();
+    if (cameras.isEmpty) {
+      // Handle the case where no cameras are available.
+      _showErrorDialog("No camera found on this device.");
+      return;
+    }
 
+    // Prefer the front-facing camera if available
+    CameraDescription? frontCamera;
+    for (var camera in cameras) {
+      if (camera.lensDirection == CameraLensDirection.front) {
+        frontCamera = camera;
+        break;
+      }
+    }
+
+    // Use the front camera or fall back to the first available camera
+    final selectedCamera = frontCamera ?? cameras.first;
+
+    _cameraController = CameraController(
+      selectedCamera,
+      ResolutionPreset.medium,
+      // Important for web: Disable audio in the camera controller
+      // to prevent conflicts with the audio recorder.
+      enableAudio: false, 
+    );
+
+    // Store the initialization future to await it later
+    _initializeCameraFuture = _cameraController!.initialize().then((_) {
+      if (mounted) {
+        setState(() {
+          _isCameraInitialized = true;
+        });
+      }
+    }).catchError((e) {
+      // Catch and show initialization errors (like permission denied)
+      _showErrorDialog("Could not initialize camera: $e");
+    });
+
+  } catch (e) {
+    _showErrorDialog("Failed to access camera: $e");
+  }
+}
   void _startNewChat() {
     if (mounted) {
       setState(() {
@@ -542,132 +559,113 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ** CORRECTED: Unified video recording method for Web and Mobile **
-  Future<void> _startVideoRecording() async {
-  if (kIsWeb) {
-    try {
-      // For web, use the same audio recorder since we can't access camera directly via record package
-      if (await _audioRecorder.hasPermission()) {
-        await _audioRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.opus),
-          path: 'web_video_recording.mp4', // Dummy path for web
-        );
-        setState(() {
-          _isRecordingVideo = true;
-        });
-        _showSnackBar('Webcam recording started...', Colors.green);
-      } else {
-        _showPermissionDeniedDialog('Camera');
-      }
-    } catch (e) {
-      _showErrorDialog('Failed to start video recording: $e');
-    }
-  } else {
-    // Mobile implementation remains the same
-    try {
+  // ** CORRECTED: Unified video recording method for Web and Mobile **
+// **REVISED: Unified video recording method for ALL platforms**
+Future<void> _startVideoRecording() async {
+  try {
+    // Request permissions (applies to mobile)
+    if (!kIsWeb) {
       await _requestPermissions();
       final status = await Permission.camera.status;
       if (status != PermissionStatus.granted) {
         _showPermissionDeniedDialog('Camera');
         return;
       }
-      if (_cameraController == null || !_isCameraInitialized) {
-        await _initializeCamera();
-        if (_initializeCameraFuture != null) {
-          await _initializeCameraFuture!;
-        }
-      }
-      if (_cameraController != null && _cameraController!.value.isInitialized) {
-        await _cameraController!.startVideoRecording();
-        if (mounted) {
-          setState(() {
-            _isRecordingVideo = true;
-          });
-          _showSnackBar('Video recording started...', Colors.green);
-        }
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return VideoRecordingPreview(
-              cameraController: _cameraController!,
-              onStopRecording: () async {
-                await _stopVideoRecording();
-                Navigator.of(context).pop();
-              },
-              onClose: () {
-                if (_isRecordingVideo) {
-                  _stopVideoRecording();
-                }
-                Navigator.of(context).pop();
-              },
-            );
-          },
-        );
-      } else {
-        _showErrorDialog('Camera not initialized');
-      }
-    } catch (e) {
-      _showErrorDialog('Failed to start video recording: $e');
     }
+
+    // Initialize the camera if it hasn't been already
+    if (_cameraController == null || !_isCameraInitialized) {
+      await _initializeCamera();
+      if (_initializeCameraFuture != null) {
+        await _initializeCameraFuture!;
+      }
+    }
+
+    // Start recording if the controller is ready
+    if (_cameraController != null && _cameraController!.value.isInitialized) {
+      await _cameraController!.startVideoRecording();
+      if (mounted) {
+        setState(() {
+          _isRecordingVideo = true;
+        });
+        _showSnackBar('Video recording started...', Colors.green);
+      }
+
+      // --- This dialog will now show on WEB and MOBILE ---
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return VideoRecordingPreview(
+            cameraController: _cameraController!,
+            onStopRecording: () async {
+              await _stopVideoRecording();
+              // Use mounted check before accessing context
+              if (mounted) Navigator.of(context).pop();
+            },
+            onClose: () async {
+              if (_isRecordingVideo) {
+                await _stopVideoRecording();
+              }
+              // Use mounted check before accessing context
+              if (mounted) Navigator.of(context).pop();
+            },
+          );
+        },
+      );
+    } else {
+      _showErrorDialog('Camera not initialized. Please allow camera access.');
+    }
+  } catch (e) {
+    _showErrorDialog('Failed to start video recording: $e');
   }
 }
 
   // ** CORRECTED: Unified video stopping method for Web and Mobile **
- Future<void> _stopVideoRecording() async {
-  if (kIsWeb) {
-    try {
-      final String? path = await _audioRecorder.stop();
-      if (path != null) {
-        // For web, we need to fetch the recorded blob as bytes
-        final response = await Dio().get(path, options: Options(responseType: ResponseType.bytes));
-        final bytes = response.data as Uint8List;
+ // **REVISED: Unified video stopping method for ALL platforms**
+Future<void> _stopVideoRecording() async {
+  try {
+    if (_cameraController == null || !_isRecordingVideo) return;
+
+    final XFile videoFile = await _cameraController!.stopVideoRecording();
+
+    if (mounted) {
+      setState(() {
+        _isRecordingVideo = false;
+      });
+    }
+
+    // Create the platform-agnostic file wrapper
+    final String fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
+    
+    if (kIsWeb) {
+      // On web, read the file as bytes from the blob URL
+      final Uint8List videoBytes = await videoFile.readAsBytes();
+      if (mounted) {
         setState(() {
-          _isRecordingVideo = false;
-          final fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
           _pendingFiles.add(PlatformFileWrapper(
             name: fileName,
-            bytes: bytes,
+            bytes: videoBytes,
           ));
         });
-        _showSnackBar('Video recorded! Press send to share.', Colors.green);
       }
-    } catch (e) {
-      _showErrorDialog('Failed to stop video recording: $e');
-    }
-  } else {
-    // Mobile implementation remains the same
-    try {
-      if (_cameraController != null && _isRecordingVideo) {
-        final XFile tempFile = await _cameraController!.stopVideoRecording();
-        if (mounted) {
-          setState(() {
-            _isRecordingVideo = false;
-          });
-        }
-        final originalFile = File(tempFile.path) as dynamic;
-        final directory = await getTemporaryDirectory();
-        final String newPath = path.join(
-          directory.path,
-          'video_${DateTime.now().millisecondsSinceEpoch}.mp4',
-        );
-        final newFile = await originalFile.rename(newPath);
-        if (await newFile.exists()) {
-          if (mounted) {
-            setState(() {
-              _pendingFiles.add(PlatformFileWrapper(
-                name: path.basename(newFile.path),
-                path: newFile.path,
-              ));
-            });
-            _showSnackBar('Video recorded! Press send to share.', Colors.green);
-          }
-        } else {
-          _showErrorDialog('Failed to save the recorded video file.');
-        }
+    } else {
+      // On mobile, use the file path directly
+      final File file = File(videoFile.path);
+      if (await file.exists() && mounted) {
+        setState(() {
+          _pendingFiles.add(PlatformFileWrapper(
+            name: fileName,
+            path: file.path,
+          ));
+        });
       }
-    } catch (e) {
-      _showErrorDialog('Failed to stop video recording: $e');
     }
+    
+    _showSnackBar('Video recorded! Press send to share.', Colors.green);
+
+  } catch (e) {
+    _showErrorDialog('Failed to stop video recording: $e');
   }
 }
 
@@ -2447,6 +2445,7 @@ class VideoRecordingPreview extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Display the camera preview
             if (cameraController.value.isInitialized)
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -2457,6 +2456,7 @@ class VideoRecordingPreview extends StatelessWidget {
                 ),
               )
             else
+              // Show a loader while the camera initializes
               const SizedBox(
                 width: 240,
                 height: 320,
@@ -2466,6 +2466,7 @@ class VideoRecordingPreview extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // The "Stop Recording" button
                 ElevatedButton(
                   onPressed: onStopRecording,
                   style: ElevatedButton.styleFrom(
@@ -2480,6 +2481,7 @@ class VideoRecordingPreview extends StatelessWidget {
                       style: TextStyle(fontFamily: 'Roboto')),
                 ),
                 const SizedBox(width: 16),
+                // The "Close" button
                 OutlinedButton(
                   onPressed: onClose,
                   style: OutlinedButton.styleFrom(
