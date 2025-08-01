@@ -1061,17 +1061,20 @@ void dispose() {
           ),
         ],
       ),
-      drawer: isMobile
-          ? AppDrawer(
-              onNewSession: _startNewChat,
-              sessions: _sessions,
-              onSessionTapped: _onSessionTapped,
-              onSessionEdited: _editSessionTitle,
-              onSessionDeleted: _deleteSession,
-              isCollapsed: false,
-              onToggle: () {},
-            )
-          : null,
+     drawer: isMobile
+    ? Drawer(
+        width: MediaQuery.of(context).size.width * 0.75, // 50% width
+        child: AppDrawer(
+          onNewSession: _startNewChat,
+          sessions: _sessions,
+          onSessionTapped: _onSessionTapped,
+          onSessionEdited: _editSessionTitle,
+          onSessionDeleted: _deleteSession,
+          isCollapsed: false,
+          onToggle: () {},
+        ),
+      )
+    : null,
       body: Stack(
         children: [
           Row(
@@ -1342,6 +1345,8 @@ class ModelDropdown extends StatelessWidget {
 }
 
 // ** UPDATED: This widget now takes a list of the wrapper class **
+// lib/main.dart
+
 class PendingFilesDisplay extends StatelessWidget {
   final List<PlatformFileWrapper> files;
   final Function(int) onRemove;
@@ -1360,7 +1365,7 @@ class PendingFilesDisplay extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.only(right: 8.0),
         child: PendingFileChip(
-          file: file, // Pass the wrapper
+          file: file,
           onRemove: () => onRemove(index),
         ),
       );
@@ -1368,6 +1373,10 @@ class PendingFilesDisplay extends StatelessWidget {
 
     return Container(
       width: double.infinity,
+      // --- THIS IS THE FIX ---
+      // This line centers the child (the scrollable row of chips)
+      alignment: Alignment.center,
+      // ---------------------
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
       decoration: BoxDecoration(
         color: kEiraBackground,
@@ -1375,9 +1384,11 @@ class PendingFilesDisplay extends StatelessWidget {
           top: BorderSide(color: kEiraBorder.withOpacity(0.3)),
         ),
       ),
+      // We use a SingleChildScrollView to allow horizontal scrolling if many files are added
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center, // This ensures the row itself tries to center
           children: fileChips,
         ),
       ),
@@ -1484,8 +1495,9 @@ class AppDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDesktop = ResponsiveUtils.isDesktop(context);
-
+ final screenWidth = MediaQuery.of(context).size.width;
     return Container(
+      width: isDesktop ? kSidebarWidth : screenWidth * 0.75,
       color: kEiraSidebarBg,
       child: SafeArea(
         child: Column(
