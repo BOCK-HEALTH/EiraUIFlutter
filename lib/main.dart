@@ -860,10 +860,113 @@ Future<void> _stopVideoRecording() async {
       );
     }
   }
+  
+  void _handleRefresh() {
+    _loadSessions();
+    if (_currentSessionId != null) {
+      _loadChatHistory(sessionId: _currentSessionId);
+    }
+    _showSnackBar('Data refreshed!', kEiraYellow);
+  }
+
+  Future<void> _showChangeUsernameDialog() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final newNameController = TextEditingController(text: user.displayName);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change Username'),
+        content: TextField(
+          controller: newNameController,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Enter new username'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final newName = newNameController.text.trim();
+      if (newName.isNotEmpty) {
+        try {
+          await user.updateDisplayName(newName);
+          setState(() {}); 
+          _showSnackBar('Username updated successfully!', Colors.green);
+        } on FirebaseAuthException catch (e) {
+          _showErrorDialog('Failed to update username: ${e.message}');
+        }
+      }
+    }
+  }
+
+  Future<void> _showChangePasswordDialog() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.email == null) {
+      _showErrorDialog("No user email found to send reset link.");
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change Password'),
+        content: Text(
+            'A password reset link will be sent to:\n\n${user.email}\n\nDo you want to continue?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Send Email'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseAuth.instance.sendPasswordResetEmail(email: user.email!);
+        _showSnackBar(
+            'Password reset email sent to ${user.email}', kEiraYellow);
+      } on FirebaseAuthException catch (e) {
+        _showErrorDialog('Failed to send email: ${e.message}');
+      }
+    }
+  }
+
+  void _showChangeEmailInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change Email'),
+        content: const Text(
+            'This feature is not available at the moment. Please contact support for assistance.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   @override
 void dispose() {
-  _audioRecorder.dispose(); // Changed from closeRecorder to dispose
+  _audioRecorder.dispose(); 
   _cameraController?.dispose();
   _dio.close();
   _textController.dispose();
@@ -923,10 +1026,21 @@ void dispose() {
                 ),
                 elevation: 8,
                 color: kEiraBackground,
-                onSelected: (value) async {
-                  if (value == 'logout') {
-                    await FirebaseAuth.instance.signOut();
+                onSelected: (value) {
+                  // --- MODIFICATION START ---
+                  // UPDATED onSelected logic to remove logout
+                  switch (value) {
+                    case 'change_username':
+                      _showChangeUsernameDialog();
+                      break;
+                    case 'change_password':
+                      _showChangePasswordDialog();
+                      break;
+                    case 'change_email':
+                      _showChangeEmailInfoDialog();
+                      break;
                   }
+                  // --- MODIFICATION END ---
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                   PopupMenuItem<String>(
@@ -985,23 +1099,47 @@ void dispose() {
                       ),
                     ),
                   ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem<String>(
-                    value: 'logout',
-                    child: Row(
+                  const PopupMenuDivider(height: 1),
+                  
+                  // Change Username
+                   PopupMenuItem<String>(
+                    value: 'change_username',
+                    child: const Row(
                       children: [
-                        const Icon(Icons.logout, color: Colors.red, size: 20),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Logout',
-                          style: TextStyle(
-                              color: Colors.red,
-                              fontFamily: 'Roboto',
-                              fontSize: 15),
-                        ),
+                        Icon(Icons.edit_outlined, color: kEiraTextSecondary, size: 20),
+                        SizedBox(width: 12),
+                        Text('Change Username', style: TextStyle(fontFamily: 'Roboto', fontSize: 15)),
                       ],
                     ),
                   ),
+
+                  // Change Password
+                   PopupMenuItem<String>(
+                    value: 'change_password',
+                    child: const Row(
+                      children: [
+                        Icon(Icons.lock_outline, color: kEiraTextSecondary, size: 20),
+                        SizedBox(width: 12),
+                        Text('Change Password', style: TextStyle(fontFamily: 'Roboto', fontSize: 15)),
+                      ],
+                    ),
+                  ),
+                  
+                  // Dummy Change Email
+                  PopupMenuItem<String>(
+                    value: 'change_email',
+                    child: const Row(
+                      children: [
+                        Icon(Icons.email_outlined, color: kEiraTextSecondary, size: 20),
+                        SizedBox(width: 12),
+                        Text('Change Email', style: TextStyle(fontFamily: 'Roboto', fontSize: 15)),
+                      ],
+                    ),
+                  ),
+
+                  // --- MODIFICATION START ---
+                  // REMOVED the divider and the Logout PopupMenuItem
+                  // --- MODIFICATION END ---
                 ],
                 child: CircleAvatar(
                   radius: 20,
@@ -1023,7 +1161,7 @@ void dispose() {
       ),
      drawer: isMobile
     ? Drawer(
-        width: MediaQuery.of(context).size.width * 0.75, // 50% width
+        width: MediaQuery.of(context).size.width * 0.75,
         child: AppDrawer(
           onNewSession: _startNewChat,
           sessions: _sessions,
@@ -1146,6 +1284,7 @@ void dispose() {
                               onFileAdd: _pickFiles,
                               onCameraOpen: _toggleVideoRecording,
                               onSendMessage: _sendMessage,
+                              onRefresh: _handleRefresh, 
                               hasPendingFiles: _pendingFiles.isNotEmpty,
                             ),
                           ],
@@ -1568,6 +1707,8 @@ class AppDrawer extends StatelessWidget {
                         },
                       ),
               ),
+              // --- MODIFICATION START ---
+              // ADDED the Logout ListTile back to the drawer
               const Divider(color: kEiraBorder, height: 1),
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.red),
@@ -1584,6 +1725,7 @@ class AppDrawer extends StatelessWidget {
                   }
                 },
               ),
+              // --- MODIFICATION END ---
             ] else if (isCollapsed && isDesktop) ...[
               Expanded(
                 child: Column(
@@ -2231,6 +2373,7 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback onFileAdd;
   final VoidCallback onCameraOpen;
   final VoidCallback onSendMessage;
+  final VoidCallback onRefresh;
   final bool hasPendingFiles;
 
   const ChatInputArea({
@@ -2243,6 +2386,7 @@ class ChatInputArea extends StatefulWidget {
     required this.onFileAdd,
     required this.onCameraOpen,
     required this.onSendMessage,
+    required this.onRefresh,
     required this.hasPendingFiles,
   });
 
@@ -2304,6 +2448,11 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                     maxLines: null,
                     minLines: 1,
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: kEiraTextSecondary),
+                  onPressed: widget.onRefresh,
+                  tooltip: 'Refresh Data',
                 ),
                 IconButton(
                   icon: const Icon(Icons.add, color: kEiraTextSecondary),
