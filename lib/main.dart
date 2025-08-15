@@ -351,17 +351,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
   Future<void> _initializeCamera() async {
-  // --- MODIFICATION ---
-  // The 'if (kIsWeb) return;' check has been REMOVED.
   try {
     final cameras = await availableCameras();
     if (cameras.isEmpty) {
-      // Handle the case where no cameras are available.
       _showErrorDialog("No camera found on this device.");
       return;
     }
 
-    // Prefer the front-facing camera if available
     CameraDescription? frontCamera;
     for (var camera in cameras) {
       if (camera.lensDirection == CameraLensDirection.front) {
@@ -370,18 +366,14 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // Use the front camera or fall back to the first available camera
     final selectedCamera = frontCamera ?? cameras.first;
 
     _cameraController = CameraController(
       selectedCamera,
       ResolutionPreset.medium,
-      // Important for web: Disable audio in the camera controller
-      // to prevent conflicts with the audio recorder.
       enableAudio: false, 
     );
 
-    // Store the initialization future to await it later
     _initializeCameraFuture = _cameraController!.initialize().then((_) {
       if (mounted) {
         setState(() {
@@ -389,7 +381,6 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }).catchError((e) {
-      // Catch and show initialization errors (like permission denied)
       _showErrorDialog("Could not initialize camera: $e");
     });
 
@@ -421,16 +412,13 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {}
   }
 
-  // ** CORRECTED: Unified audio recording method for Web and Mobile **
  Future<void> _startAudioRecording() async {
   try {
     if (kIsWeb) {
-      // Web recording using the record package
       if (await _audioRecorder.hasPermission()) {
-        // For web, we need to provide a path (even though it's not used)
         await _audioRecorder.start(
           const RecordConfig(encoder: AudioEncoder.wav),
-          path: 'web_recording.wav', // Provide a dummy path for web
+          path: 'web_recording.wav',
         );
         setState(() {
           _isRecordingAudio = true;
@@ -440,7 +428,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _showPermissionDeniedDialog('Microphone');
       }
     } else {
-      // Mobile implementation
       await _requestPermissions();
       final status = await Permission.microphone.status;
       if (status != PermissionStatus.granted) {
@@ -472,13 +459,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _showErrorDialog('Failed to start audio recording: $e');
   }
 }
-  // ** CORRECTED: Unified audio stopping method for Web and Mobile **
   Future<void> _stopAudioRecording() async {
     try {
       if (kIsWeb) {
         final String? path = await _audioRecorder.stop();
         if (path != null) {
-          // For web, we need to fetch the recorded blob as bytes
           final response = await Dio().get(path, options: Options(responseType: ResponseType.bytes));
           final bytes = response.data as Uint8List;
           setState(() {
@@ -518,12 +503,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ** CORRECTED: Unified video recording method for Web and Mobile **
-  // ** CORRECTED: Unified video recording method for Web and Mobile **
-// **REVISED: Unified video recording method for ALL platforms**
 Future<void> _startVideoRecording() async {
   try {
-    // Request permissions (applies to mobile)
     if (!kIsWeb) {
       await _requestPermissions();
       final status = await Permission.camera.status;
@@ -533,7 +514,6 @@ Future<void> _startVideoRecording() async {
       }
     }
 
-    // Initialize the camera if it hasn't been already
     if (_cameraController == null || !_isCameraInitialized) {
       await _initializeCamera();
       if (_initializeCameraFuture != null) {
@@ -541,7 +521,6 @@ Future<void> _startVideoRecording() async {
       }
     }
 
-    // Start recording if the controller is ready
     if (_cameraController != null && _cameraController!.value.isInitialized) {
       await _cameraController!.startVideoRecording();
       if (mounted) {
@@ -551,7 +530,6 @@ Future<void> _startVideoRecording() async {
         _showSnackBar('Video recording started...', Colors.green);
       }
 
-      // --- This dialog will now show on WEB and MOBILE ---
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -560,14 +538,12 @@ Future<void> _startVideoRecording() async {
             cameraController: _cameraController!,
             onStopRecording: () async {
               await _stopVideoRecording();
-              // Use mounted check before accessing context
               if (mounted) Navigator.of(context).pop();
             },
             onClose: () async {
               if (_isRecordingVideo) {
                 await _stopVideoRecording();
               }
-              // Use mounted check before accessing context
               if (mounted) Navigator.of(context).pop();
             },
           );
@@ -581,8 +557,6 @@ Future<void> _startVideoRecording() async {
   }
 }
 
-  // ** CORRECTED: Unified video stopping method for Web and Mobile **
- // **REVISED: Unified video stopping method for ALL platforms**
 Future<void> _stopVideoRecording() async {
   try {
     if (_cameraController == null || !_isRecordingVideo) return;
@@ -595,11 +569,9 @@ Future<void> _stopVideoRecording() async {
       });
     }
 
-    // Create the platform-agnostic file wrapper
     final String fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
     
     if (kIsWeb) {
-      // On web, read the file as bytes from the blob URL
       final Uint8List videoBytes = await videoFile.readAsBytes();
       if (mounted) {
         setState(() {
@@ -610,7 +582,6 @@ Future<void> _stopVideoRecording() async {
         });
       }
     } else {
-      // On mobile, use the file path directly
       final File file = File(videoFile.path);
       if (await file.exists() && mounted) {
         setState(() {
@@ -1027,8 +998,6 @@ void dispose() {
                 elevation: 8,
                 color: kEiraBackground,
                 onSelected: (value) {
-                  // --- MODIFICATION START ---
-                  // UPDATED onSelected logic to remove logout
                   switch (value) {
                     case 'change_username':
                       _showChangeUsernameDialog();
@@ -1040,7 +1009,6 @@ void dispose() {
                       _showChangeEmailInfoDialog();
                       break;
                   }
-                  // --- MODIFICATION END ---
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                   PopupMenuItem<String>(
@@ -1101,7 +1069,6 @@ void dispose() {
                   ),
                   const PopupMenuDivider(height: 1),
                   
-                  // Change Username
                    PopupMenuItem<String>(
                     value: 'change_username',
                     child: const Row(
@@ -1113,7 +1080,6 @@ void dispose() {
                     ),
                   ),
 
-                  // Change Password
                    PopupMenuItem<String>(
                     value: 'change_password',
                     child: const Row(
@@ -1125,7 +1091,6 @@ void dispose() {
                     ),
                   ),
                   
-                  // Dummy Change Email
                   PopupMenuItem<String>(
                     value: 'change_email',
                     child: const Row(
@@ -1136,10 +1101,6 @@ void dispose() {
                       ],
                     ),
                   ),
-
-                  // --- MODIFICATION START ---
-                  // REMOVED the divider and the Logout PopupMenuItem
-                  // --- MODIFICATION END ---
                 ],
                 child: CircleAvatar(
                   radius: 20,
@@ -1162,6 +1123,8 @@ void dispose() {
      drawer: isMobile
     ? Drawer(
         width: MediaQuery.of(context).size.width * 0.75,
+        // --- MODIFICATION START ---
+        // Pass the refresh handler to the drawer
         child: AppDrawer(
           onNewSession: _startNewChat,
           sessions: _sessions,
@@ -1170,7 +1133,9 @@ void dispose() {
           onSessionDeleted: _deleteSession,
           isCollapsed: false,
           onToggle: () {},
+          onRefresh: _handleRefresh,
         ),
+        // --- MODIFICATION END ---
       )
     : null,
       body: Stack(
@@ -1189,6 +1154,8 @@ void dispose() {
                       child: Visibility(
                         visible: !_isSidebarCollapsed,
                         maintainState: true,
+                        // --- MODIFICATION START ---
+                        // Pass the refresh handler to the drawer
                         child: AppDrawer(
                           onNewSession: _startNewChat,
                           sessions: _sessions,
@@ -1201,7 +1168,9 @@ void dispose() {
                               _isSidebarCollapsed = !_isSidebarCollapsed;
                             });
                           },
+                          onRefresh: _handleRefresh,
                         ),
+                        // --- MODIFICATION END ---
                       ),
                     ),
                   ),
@@ -1284,7 +1253,6 @@ void dispose() {
                               onFileAdd: _pickFiles,
                               onCameraOpen: _toggleVideoRecording,
                               onSendMessage: _sendMessage,
-                              onRefresh: _handleRefresh, 
                               hasPendingFiles: _pendingFiles.isNotEmpty,
                             ),
                           ],
@@ -1443,9 +1411,6 @@ class ModelDropdown extends StatelessWidget {
   }
 }
 
-// ** UPDATED: This widget now takes a list of the wrapper class **
-// lib/main.dart
-
 class PendingFilesDisplay extends StatelessWidget {
   final List<PlatformFileWrapper> files;
   final Function(int) onRemove;
@@ -1472,10 +1437,7 @@ class PendingFilesDisplay extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      // --- THIS IS THE FIX ---
-      // This line centers the child (the scrollable row of chips)
       alignment: Alignment.center,
-      // ---------------------
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
       decoration: BoxDecoration(
         color: kEiraBackground,
@@ -1483,11 +1445,10 @@ class PendingFilesDisplay extends StatelessWidget {
           top: BorderSide(color: kEiraBorder.withOpacity(0.3)),
         ),
       ),
-      // We use a SingleChildScrollView to allow horizontal scrolling if many files are added
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center, // This ensures the row itself tries to center
+          mainAxisAlignment: MainAxisAlignment.center,
           children: fileChips,
         ),
       ),
@@ -1495,7 +1456,6 @@ class PendingFilesDisplay extends StatelessWidget {
   }
 }
 
-// ** UPDATED: This widget now takes the wrapper class **
 class PendingFileChip extends StatelessWidget {
   final PlatformFileWrapper file;
   final VoidCallback onRemove;
@@ -1508,9 +1468,8 @@ class PendingFileChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ** Use the name from the wrapper **
     final displayName = file.name;
-    final displayIcon = _getFileIcon(displayName); // Use name to get icon
+    final displayIcon = _getFileIcon(displayName);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1579,6 +1538,10 @@ class AppDrawer extends StatelessWidget {
   final Future<bool> Function(int) onSessionDeleted;
   final bool isCollapsed;
   final VoidCallback onToggle;
+  // --- MODIFICATION START ---
+  // Added onRefresh parameter
+  final VoidCallback onRefresh;
+  // --- MODIFICATION END ---
 
   const AppDrawer({
     super.key,
@@ -1589,6 +1552,10 @@ class AppDrawer extends StatelessWidget {
     required this.onSessionDeleted,
     required this.isCollapsed,
     required this.onToggle,
+    // --- MODIFICATION START ---
+    // Added onRefresh parameter to constructor
+    required this.onRefresh,
+    // --- MODIFICATION END ---
   });
 
   @override
@@ -1611,7 +1578,7 @@ class AppDrawer extends StatelessWidget {
               ),
             if (!isCollapsed) ...[
               Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: ElevatedButton.icon(
                   onPressed: onNewSession,
                   icon: const Icon(Icons.add, color: Colors.white),
@@ -1625,6 +1592,27 @@ class AppDrawer extends StatelessWidget {
                   ),
                 ),
               ),
+              // --- MODIFICATION START ---
+              // Added the Refresh Button to the sidebar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: OutlinedButton.icon(
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh, size: 20, color: kEiraTextSecondary),
+                  label: const Text(
+                    "Refresh Sessions",
+                    style: TextStyle(color: kEiraTextSecondary, fontWeight: FontWeight.normal),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 40),
+                    side: BorderSide(color: kEiraBorder.withOpacity(0.8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ),
+              // --- MODIFICATION END ---
               const SizedBox(height: 10),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.0),
@@ -1707,8 +1695,6 @@ class AppDrawer extends StatelessWidget {
                         },
                       ),
               ),
-              // --- MODIFICATION START ---
-              // ADDED the Logout ListTile back to the drawer
               const Divider(color: kEiraBorder, height: 1),
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.red),
@@ -1725,7 +1711,6 @@ class AppDrawer extends StatelessWidget {
                   }
                 },
               ),
-              // --- MODIFICATION END ---
             ] else if (isCollapsed && isDesktop) ...[
               Expanded(
                 child: Column(
@@ -2060,7 +2045,6 @@ class _MessagesListViewState extends State<MessagesListView> {
 class MessageBubble extends StatelessWidget {
   final bool isUser;
   final String text;
-  // ** UPDATED: Now receives the wrapper class **
   final List<PlatformFileWrapper>? attachments;
   final DateTime timestamp;
   final String modelName;
@@ -2126,7 +2110,6 @@ class MessageBubble extends StatelessWidget {
                       style: const TextStyle(height: 1.5, fontFamily: 'Roboto')),
                 if (hasLocalAttachment) ...[
                   const SizedBox(height: 10),
-                  // Pass the wrapper to the AttachmentChip
                   ...attachments!.map((file) => AttachmentChip(file: file)),
                 ],
                 if (hasRemoteAttachment) ...[
@@ -2220,7 +2203,6 @@ class RemoteAttachmentChip extends StatelessWidget {
   }
 }
 
-// ** UPDATED: This widget now uses the wrapper class **
 class AttachmentChip extends StatelessWidget {
   final PlatformFileWrapper file;
 
@@ -2229,7 +2211,6 @@ class AttachmentChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fileName = file.name;
-    // On mobile, if we have a path, we can show the file size. On web, we can't easily.
     final fileSize = file.path != null && !kIsWeb
         ? _formatFileSize((File(file.path!) as dynamic).lengthSync())
         : null;
@@ -2373,7 +2354,6 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback onFileAdd;
   final VoidCallback onCameraOpen;
   final VoidCallback onSendMessage;
-  final VoidCallback onRefresh;
   final bool hasPendingFiles;
 
   const ChatInputArea({
@@ -2386,7 +2366,6 @@ class ChatInputArea extends StatefulWidget {
     required this.onFileAdd,
     required this.onCameraOpen,
     required this.onSendMessage,
-    required this.onRefresh,
     required this.hasPendingFiles,
   });
 
@@ -2449,11 +2428,9 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                     minLines: 1,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.refresh, color: kEiraTextSecondary),
-                  onPressed: widget.onRefresh,
-                  tooltip: 'Refresh Data',
-                ),
+                // --- MODIFICATION START ---
+                // REMOVED the Refresh IconButton from this area
+                // --- MODIFICATION END ---
                 IconButton(
                   icon: const Icon(Icons.add, color: kEiraTextSecondary),
                   onPressed: widget.onFileAdd,
@@ -2566,7 +2543,6 @@ class VideoRecordingPreview extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Display the camera preview
             if (cameraController.value.isInitialized)
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -2577,7 +2553,6 @@ class VideoRecordingPreview extends StatelessWidget {
                 ),
               )
             else
-              // Show a loader while the camera initializes
               const SizedBox(
                 width: 240,
                 height: 320,
@@ -2587,7 +2562,6 @@ class VideoRecordingPreview extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // The "Stop Recording" button
                 ElevatedButton(
                   onPressed: onStopRecording,
                   style: ElevatedButton.styleFrom(
@@ -2602,7 +2576,6 @@ class VideoRecordingPreview extends StatelessWidget {
                       style: TextStyle(fontFamily: 'Roboto')),
                 ),
                 const SizedBox(width: 16),
-                // The "Close" button
                 OutlinedButton(
                   onPressed: onClose,
                   style: OutlinedButton.styleFrom(
