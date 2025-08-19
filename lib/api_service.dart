@@ -1,30 +1,20 @@
+// lib/api_service.dart (CORRECTED)
+
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_application_1/main.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:mime/mime.dart';
-import 'dart:io';
-import 'dart:typed_data'; // For Uint8List
 
-class ChatSession {
-  final int id;
-  final String title;
-  final DateTime createdAt;
+// --- IMPORTS FOR YOUR CENTRALIZED MODELS ---
+import 'package:flutter_application_1/models/chat_session.dart';
+import 'package:flutter_application_1/models/chat_message.dart';
+import 'package:flutter_application_1/models/platform_file_wrapper.dart';
 
-  ChatSession({required this.id, required this.title, required this.createdAt});
-
-  factory ChatSession.fromJson(Map<String, dynamic> json) {
-    return ChatSession(
-      id: json['id'],
-      title: json['title'],
-      createdAt: DateTime.parse(json['created_at']),
-    );
-  }
-}
 
 class ApiService {
-  final String _baseUrl = "https://eira-backend-mu.vercel.app";
+  // This is correctly pointing to your new AWS server
+  final String _baseUrl = "http://51.20.96.159:8080";
   final Dio _dio = Dio();
 
   Future<String?> _getIdToken() async {
@@ -36,7 +26,6 @@ class ApiService {
     return await user.getIdToken();
   }
 
-  // --- FINAL CORRECTED VERSION ---
   Future<void> updateSessionTitle(int sessionId, String newTitle) async {
     try {
       final token = await _getIdToken();
@@ -66,7 +55,6 @@ class ApiService {
     }
   }
 
-  // --- FINAL CORRECTED VERSION ---
   Future<void> deleteSession(int sessionId) async {
     try {
       final token = await _getIdToken();
@@ -169,68 +157,66 @@ class ApiService {
   }
 
    Future<Map<String, dynamic>> storeFileMessage(
-  String message,
-  PlatformFileWrapper file, {
-  int? sessionId,
-}) async {
-  final token = await _getIdToken();
-  if (token == null) throw Exception("User not authenticated");
+      String message,
+      PlatformFileWrapper file, {
+      int? sessionId,
+    }) async {
+      final token = await _getIdToken();
+      if (token == null) throw Exception("User not authenticated");
 
-  final String fileName = file.name;
-  MultipartFile multipartFile;
+      final String fileName = file.name;
+      MultipartFile multipartFile;
 
-  if (file.bytes != null) {
-    final String mimeType = lookupMimeType(fileName, headerBytes: file.bytes) ?? 'application/octet-stream';
-    multipartFile = MultipartFile.fromBytes(
-      file.bytes!,
-      filename: fileName,
-      contentType: MediaType.parse(mimeType),
-    );
-  } else if (file.path != null) {
-    final String mimeType = lookupMimeType(file.path!) ?? 'application/octet-stream';
-    multipartFile = await MultipartFile.fromFile(
-      file.path!,
-      filename: fileName,
-      contentType: MediaType.parse(mimeType),
-    );
-  } else {
-    throw Exception("Invalid file provided. No bytes or path.");
-  }
-
-  final Map<String, dynamic> formDataMap = {
-    'message': message,
-    'file': multipartFile,
-  };
-
-  if (sessionId != null) {
-    formDataMap['sessionId'] = sessionId;
-  }
-
-  FormData formData = FormData.fromMap(formDataMap);
-
-  try {
-    final response = await _dio.post(
-      '$_baseUrl/api/storeFileMessage',
-      data: formData,
-      options: Options(
-        headers: {'Authorization': 'Bearer $token'},
-        // Set longer timeouts for file uploads to handle slow networks
-        sendTimeout: const Duration(seconds: 60),    // 1 minute
-        receiveTimeout: const Duration(seconds: 60), // 1 minute
-      ),
-    );
-    return response.data;
-  } on DioException catch (e) {
-    // This provides a more helpful message directly in your run console.
-    if (e.type == DioExceptionType.connectionError) {
-        print(
-          "Connection Error: This is likely a CORS issue or a Vercel server-side limitation." +
-          " Please check the browser's developer console (F12) for the specific CORS error." +
-          " Also, ensure the file size is under Vercel's 4.5MB limit."
+      if (file.bytes != null) {
+        final String mimeType = lookupMimeType(fileName, headerBytes: file.bytes) ?? 'application/octet-stream';
+        multipartFile = MultipartFile.fromBytes(
+          file.bytes!,
+          filename: fileName,
+          contentType: MediaType.parse(mimeType),
         );
+      } else if (file.path != null) {
+        final String mimeType = lookupMimeType(file.path!) ?? 'application/octet-stream';
+        multipartFile = await MultipartFile.fromFile(
+          file.path!,
+          filename: fileName,
+          contentType: MediaType.parse(mimeType),
+        );
+      } else {
+        throw Exception("Invalid file provided. No bytes or path.");
+      }
+
+      final Map<String, dynamic> formDataMap = {
+        'message': message,
+        'file': multipartFile,
+      };
+
+      if (sessionId != null) {
+        formDataMap['sessionId'] = sessionId;
+      }
+
+      FormData formData = FormData.fromMap(formDataMap);
+
+      try {
+        final response = await _dio.post(
+          '$_baseUrl/api/storeFileMessage',
+          data: formData,
+          options: Options(
+            headers: {'Authorization': 'Bearer $token'},
+            sendTimeout: const Duration(seconds: 60),
+            receiveTimeout: const Duration(seconds: 60),
+          ),
+        );
+        return response.data;
+      } on DioException catch (e) {
+        if (e.type == DioExceptionType.connectionError || e.type == DioExceptionType.connectionTimeout) {
+            print(
+              "Connection Error: Could not connect to the AWS server. " +
+              "Please check the device's internet connection and verify the EC2 server is running. " +
+              "Also, check the EC2 Security Group rules."
+            );
+        }
+        print("Error storing file message: ${e.response?.data ?? e.message}");
+        throw Exception("Failed to send file.");
+      }
     }
-    print("Error storing file message: ${e.response?.data ?? e.message}");
-    throw Exception("Failed to send file.");
-  }
-}
 }

@@ -1,3 +1,5 @@
+// lib/main.dart (CORRECTED)
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
@@ -24,6 +26,12 @@ import 'package:flutter_application_1/registration_screen.dart';
 import 'package:flutter_application_1/firebase_options.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/api_service.dart';
+
+// --- THIS IS THE NEW IMPORT FOR YOUR CENTRALIZED CLASS ---
+import 'package:flutter_application_1/models/platform_file_wrapper.dart';
+import 'package:flutter_application_1/models/chat_message.dart';
+import 'package:flutter_application_1/models/chat_session.dart';
+
 
 const Color kEiraYellow = Color(0xFFFDB821);
 const Color kEiraYellowLight = Color(0xFFFFF8E6);
@@ -54,10 +62,6 @@ class ResponsiveUtils {
   }
 }
 
-// ** NEW: Platform-agnostic file wrapper **
-// This class holds file data in a way that works for both mobile (path) and web (bytes).
-
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -71,18 +75,7 @@ void main() async {
   runApp(const EiraApp());
 }
 
-class PlatformFileWrapper {
-  final String name;
-  final Uint8List? bytes;
-  final String? path;
-
-  PlatformFileWrapper({
-    required this.name,
-    this.bytes,
-    this.path,
-  }) : assert(bytes != null || path != null);
-}
-
+// --- THE PlatformFileWrapper CLASS HAS BEEN REMOVED FROM THIS FILE ---
 
 
 class EiraApp extends StatelessWidget {
@@ -130,40 +123,7 @@ class EiraApp extends StatelessWidget {
   }
 }
 
-class ChatMessage {
-  final String text;
-  final bool isUser;
-  final List<PlatformFileWrapper>? attachments;
-  final DateTime timestamp;
-  final String? fileUrl;
-  final String? fileType;
 
-  ChatMessage({
-    required this.text,
-    required this.isUser,
-    this.attachments,
-    DateTime? timestamp,
-    this.fileUrl,
-    this.fileType,
-  }) : timestamp = timestamp ?? DateTime.now();
-
-  factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    final fileUrlData = json['file_url'];
-    final fileTypeData = json['file_type'];
-
-    return ChatMessage(
-      text: json['message'] ?? '',
-      isUser: json['sender'] == 'user',
-      timestamp: DateTime.parse(json['created_at']),
-      fileUrl: (fileUrlData is List && fileUrlData.isNotEmpty)
-          ? fileUrlData[0] as String?
-          : null,
-      fileType: (fileTypeData is List && fileTypeData.isNotEmpty)
-          ? fileTypeData[0] as String?
-          : null,
-    );
-  }
-}
 
 
 class HomeScreen extends StatefulWidget {
@@ -391,17 +351,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
   Future<void> _initializeCamera() async {
-  // --- MODIFICATION ---
-  // The 'if (kIsWeb) return;' check has been REMOVED.
   try {
     final cameras = await availableCameras();
     if (cameras.isEmpty) {
-      // Handle the case where no cameras are available.
       _showErrorDialog("No camera found on this device.");
       return;
     }
 
-    // Prefer the front-facing camera if available
     CameraDescription? frontCamera;
     for (var camera in cameras) {
       if (camera.lensDirection == CameraLensDirection.front) {
@@ -410,18 +366,14 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // Use the front camera or fall back to the first available camera
     final selectedCamera = frontCamera ?? cameras.first;
 
     _cameraController = CameraController(
       selectedCamera,
       ResolutionPreset.medium,
-      // Important for web: Disable audio in the camera controller
-      // to prevent conflicts with the audio recorder.
       enableAudio: false, 
     );
 
-    // Store the initialization future to await it later
     _initializeCameraFuture = _cameraController!.initialize().then((_) {
       if (mounted) {
         setState(() {
@@ -429,7 +381,6 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }).catchError((e) {
-      // Catch and show initialization errors (like permission denied)
       _showErrorDialog("Could not initialize camera: $e");
     });
 
@@ -461,16 +412,13 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {}
   }
 
-  // ** CORRECTED: Unified audio recording method for Web and Mobile **
  Future<void> _startAudioRecording() async {
   try {
     if (kIsWeb) {
-      // Web recording using the record package
       if (await _audioRecorder.hasPermission()) {
-        // For web, we need to provide a path (even though it's not used)
         await _audioRecorder.start(
           const RecordConfig(encoder: AudioEncoder.wav),
-          path: 'web_recording.wav', // Provide a dummy path for web
+          path: 'web_recording.wav',
         );
         setState(() {
           _isRecordingAudio = true;
@@ -480,7 +428,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _showPermissionDeniedDialog('Microphone');
       }
     } else {
-      // Mobile implementation
       await _requestPermissions();
       final status = await Permission.microphone.status;
       if (status != PermissionStatus.granted) {
@@ -512,13 +459,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _showErrorDialog('Failed to start audio recording: $e');
   }
 }
-  // ** CORRECTED: Unified audio stopping method for Web and Mobile **
   Future<void> _stopAudioRecording() async {
     try {
       if (kIsWeb) {
         final String? path = await _audioRecorder.stop();
         if (path != null) {
-          // For web, we need to fetch the recorded blob as bytes
           final response = await Dio().get(path, options: Options(responseType: ResponseType.bytes));
           final bytes = response.data as Uint8List;
           setState(() {
@@ -558,12 +503,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ** CORRECTED: Unified video recording method for Web and Mobile **
-  // ** CORRECTED: Unified video recording method for Web and Mobile **
-// **REVISED: Unified video recording method for ALL platforms**
 Future<void> _startVideoRecording() async {
   try {
-    // Request permissions (applies to mobile)
     if (!kIsWeb) {
       await _requestPermissions();
       final status = await Permission.camera.status;
@@ -573,7 +514,6 @@ Future<void> _startVideoRecording() async {
       }
     }
 
-    // Initialize the camera if it hasn't been already
     if (_cameraController == null || !_isCameraInitialized) {
       await _initializeCamera();
       if (_initializeCameraFuture != null) {
@@ -581,7 +521,6 @@ Future<void> _startVideoRecording() async {
       }
     }
 
-    // Start recording if the controller is ready
     if (_cameraController != null && _cameraController!.value.isInitialized) {
       await _cameraController!.startVideoRecording();
       if (mounted) {
@@ -591,7 +530,6 @@ Future<void> _startVideoRecording() async {
         _showSnackBar('Video recording started...', Colors.green);
       }
 
-      // --- This dialog will now show on WEB and MOBILE ---
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -600,14 +538,12 @@ Future<void> _startVideoRecording() async {
             cameraController: _cameraController!,
             onStopRecording: () async {
               await _stopVideoRecording();
-              // Use mounted check before accessing context
               if (mounted) Navigator.of(context).pop();
             },
             onClose: () async {
               if (_isRecordingVideo) {
                 await _stopVideoRecording();
               }
-              // Use mounted check before accessing context
               if (mounted) Navigator.of(context).pop();
             },
           );
@@ -621,8 +557,6 @@ Future<void> _startVideoRecording() async {
   }
 }
 
-  // ** CORRECTED: Unified video stopping method for Web and Mobile **
- // **REVISED: Unified video stopping method for ALL platforms**
 Future<void> _stopVideoRecording() async {
   try {
     if (_cameraController == null || !_isRecordingVideo) return;
@@ -635,11 +569,9 @@ Future<void> _stopVideoRecording() async {
       });
     }
 
-    // Create the platform-agnostic file wrapper
     final String fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
     
     if (kIsWeb) {
-      // On web, read the file as bytes from the blob URL
       final Uint8List videoBytes = await videoFile.readAsBytes();
       if (mounted) {
         setState(() {
@@ -650,7 +582,6 @@ Future<void> _stopVideoRecording() async {
         });
       }
     } else {
-      // On mobile, use the file path directly
       final File file = File(videoFile.path);
       if (await file.exists() && mounted) {
         setState(() {
@@ -900,10 +831,113 @@ Future<void> _stopVideoRecording() async {
       );
     }
   }
+  
+  void _handleRefresh() {
+    _loadSessions();
+    if (_currentSessionId != null) {
+      _loadChatHistory(sessionId: _currentSessionId);
+    }
+    _showSnackBar('Data refreshed!', kEiraYellow);
+  }
+
+  Future<void> _showChangeUsernameDialog() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final newNameController = TextEditingController(text: user.displayName);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change Username'),
+        content: TextField(
+          controller: newNameController,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Enter new username'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final newName = newNameController.text.trim();
+      if (newName.isNotEmpty) {
+        try {
+          await user.updateDisplayName(newName);
+          setState(() {}); 
+          _showSnackBar('Username updated successfully!', Colors.green);
+        } on FirebaseAuthException catch (e) {
+          _showErrorDialog('Failed to update username: ${e.message}');
+        }
+      }
+    }
+  }
+
+  Future<void> _showChangePasswordDialog() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.email == null) {
+      _showErrorDialog("No user email found to send reset link.");
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change Password'),
+        content: Text(
+            'A password reset link will be sent to:\n\n${user.email}\n\nDo you want to continue?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Send Email'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseAuth.instance.sendPasswordResetEmail(email: user.email!);
+        _showSnackBar(
+            'Password reset email sent to ${user.email}', kEiraYellow);
+      } on FirebaseAuthException catch (e) {
+        _showErrorDialog('Failed to send email: ${e.message}');
+      }
+    }
+  }
+
+  void _showChangeEmailInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change Email'),
+        content: const Text(
+            'This feature is not available at the moment. Please contact support for assistance.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   @override
 void dispose() {
-  _audioRecorder.dispose(); // Changed from closeRecorder to dispose
+  _audioRecorder.dispose(); 
   _cameraController?.dispose();
   _dio.close();
   _textController.dispose();
@@ -963,9 +997,17 @@ void dispose() {
                 ),
                 elevation: 8,
                 color: kEiraBackground,
-                onSelected: (value) async {
-                  if (value == 'logout') {
-                    await FirebaseAuth.instance.signOut();
+                onSelected: (value) {
+                  switch (value) {
+                    case 'change_username':
+                      _showChangeUsernameDialog();
+                      break;
+                    case 'change_password':
+                      _showChangePasswordDialog();
+                      break;
+                    case 'change_email':
+                      _showChangeEmailInfoDialog();
+                      break;
                   }
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -1025,20 +1067,37 @@ void dispose() {
                       ),
                     ),
                   ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem<String>(
-                    value: 'logout',
-                    child: Row(
+                  const PopupMenuDivider(height: 1),
+                  
+                   PopupMenuItem<String>(
+                    value: 'change_username',
+                    child: const Row(
                       children: [
-                        const Icon(Icons.logout, color: Colors.red, size: 20),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Logout',
-                          style: TextStyle(
-                              color: Colors.red,
-                              fontFamily: 'Roboto',
-                              fontSize: 15),
-                        ),
+                        Icon(Icons.edit_outlined, color: kEiraTextSecondary, size: 20),
+                        SizedBox(width: 12),
+                        Text('Change Username', style: TextStyle(fontFamily: 'Roboto', fontSize: 15)),
+                      ],
+                    ),
+                  ),
+
+                   PopupMenuItem<String>(
+                    value: 'change_password',
+                    child: const Row(
+                      children: [
+                        Icon(Icons.lock_outline, color: kEiraTextSecondary, size: 20),
+                        SizedBox(width: 12),
+                        Text('Change Password', style: TextStyle(fontFamily: 'Roboto', fontSize: 15)),
+                      ],
+                    ),
+                  ),
+                  
+                  PopupMenuItem<String>(
+                    value: 'change_email',
+                    child: const Row(
+                      children: [
+                        Icon(Icons.email_outlined, color: kEiraTextSecondary, size: 20),
+                        SizedBox(width: 12),
+                        Text('Change Email', style: TextStyle(fontFamily: 'Roboto', fontSize: 15)),
                       ],
                     ),
                   ),
@@ -1063,7 +1122,9 @@ void dispose() {
       ),
      drawer: isMobile
     ? Drawer(
-        width: MediaQuery.of(context).size.width * 0.75, // 50% width
+        width: MediaQuery.of(context).size.width * 0.75,
+        // --- MODIFICATION START ---
+        // Pass the refresh handler to the drawer
         child: AppDrawer(
           onNewSession: _startNewChat,
           sessions: _sessions,
@@ -1072,7 +1133,9 @@ void dispose() {
           onSessionDeleted: _deleteSession,
           isCollapsed: false,
           onToggle: () {},
+          onRefresh: _handleRefresh,
         ),
+        // --- MODIFICATION END ---
       )
     : null,
       body: Stack(
@@ -1091,6 +1154,8 @@ void dispose() {
                       child: Visibility(
                         visible: !_isSidebarCollapsed,
                         maintainState: true,
+                        // --- MODIFICATION START ---
+                        // Pass the refresh handler to the drawer
                         child: AppDrawer(
                           onNewSession: _startNewChat,
                           sessions: _sessions,
@@ -1103,7 +1168,9 @@ void dispose() {
                               _isSidebarCollapsed = !_isSidebarCollapsed;
                             });
                           },
+                          onRefresh: _handleRefresh,
                         ),
+                        // --- MODIFICATION END ---
                       ),
                     ),
                   ),
@@ -1344,9 +1411,6 @@ class ModelDropdown extends StatelessWidget {
   }
 }
 
-// ** UPDATED: This widget now takes a list of the wrapper class **
-// lib/main.dart
-
 class PendingFilesDisplay extends StatelessWidget {
   final List<PlatformFileWrapper> files;
   final Function(int) onRemove;
@@ -1373,10 +1437,7 @@ class PendingFilesDisplay extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      // --- THIS IS THE FIX ---
-      // This line centers the child (the scrollable row of chips)
       alignment: Alignment.center,
-      // ---------------------
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
       decoration: BoxDecoration(
         color: kEiraBackground,
@@ -1384,11 +1445,10 @@ class PendingFilesDisplay extends StatelessWidget {
           top: BorderSide(color: kEiraBorder.withOpacity(0.3)),
         ),
       ),
-      // We use a SingleChildScrollView to allow horizontal scrolling if many files are added
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center, // This ensures the row itself tries to center
+          mainAxisAlignment: MainAxisAlignment.center,
           children: fileChips,
         ),
       ),
@@ -1396,7 +1456,6 @@ class PendingFilesDisplay extends StatelessWidget {
   }
 }
 
-// ** UPDATED: This widget now takes the wrapper class **
 class PendingFileChip extends StatelessWidget {
   final PlatformFileWrapper file;
   final VoidCallback onRemove;
@@ -1409,9 +1468,8 @@ class PendingFileChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ** Use the name from the wrapper **
     final displayName = file.name;
-    final displayIcon = _getFileIcon(displayName); // Use name to get icon
+    final displayIcon = _getFileIcon(displayName);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1480,6 +1538,10 @@ class AppDrawer extends StatelessWidget {
   final Future<bool> Function(int) onSessionDeleted;
   final bool isCollapsed;
   final VoidCallback onToggle;
+  // --- MODIFICATION START ---
+  // Added onRefresh parameter
+  final VoidCallback onRefresh;
+  // --- MODIFICATION END ---
 
   const AppDrawer({
     super.key,
@@ -1490,6 +1552,10 @@ class AppDrawer extends StatelessWidget {
     required this.onSessionDeleted,
     required this.isCollapsed,
     required this.onToggle,
+    // --- MODIFICATION START ---
+    // Added onRefresh parameter to constructor
+    required this.onRefresh,
+    // --- MODIFICATION END ---
   });
 
   @override
@@ -1512,7 +1578,7 @@ class AppDrawer extends StatelessWidget {
               ),
             if (!isCollapsed) ...[
               Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: ElevatedButton.icon(
                   onPressed: onNewSession,
                   icon: const Icon(Icons.add, color: Colors.white),
@@ -1526,6 +1592,27 @@ class AppDrawer extends StatelessWidget {
                   ),
                 ),
               ),
+              // --- MODIFICATION START ---
+              // Added the Refresh Button to the sidebar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: OutlinedButton.icon(
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh, size: 20, color: kEiraTextSecondary),
+                  label: const Text(
+                    "Refresh Sessions",
+                    style: TextStyle(color: kEiraTextSecondary, fontWeight: FontWeight.normal),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 40),
+                    side: BorderSide(color: kEiraBorder.withOpacity(0.8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ),
+              // --- MODIFICATION END ---
               const SizedBox(height: 10),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.0),
@@ -1958,7 +2045,6 @@ class _MessagesListViewState extends State<MessagesListView> {
 class MessageBubble extends StatelessWidget {
   final bool isUser;
   final String text;
-  // ** UPDATED: Now receives the wrapper class **
   final List<PlatformFileWrapper>? attachments;
   final DateTime timestamp;
   final String modelName;
@@ -2024,7 +2110,6 @@ class MessageBubble extends StatelessWidget {
                       style: const TextStyle(height: 1.5, fontFamily: 'Roboto')),
                 if (hasLocalAttachment) ...[
                   const SizedBox(height: 10),
-                  // Pass the wrapper to the AttachmentChip
                   ...attachments!.map((file) => AttachmentChip(file: file)),
                 ],
                 if (hasRemoteAttachment) ...[
@@ -2118,7 +2203,6 @@ class RemoteAttachmentChip extends StatelessWidget {
   }
 }
 
-// ** UPDATED: This widget now uses the wrapper class **
 class AttachmentChip extends StatelessWidget {
   final PlatformFileWrapper file;
 
@@ -2127,7 +2211,6 @@ class AttachmentChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fileName = file.name;
-    // On mobile, if we have a path, we can show the file size. On web, we can't easily.
     final fileSize = file.path != null && !kIsWeb
         ? _formatFileSize((File(file.path!) as dynamic).lengthSync())
         : null;
@@ -2345,6 +2428,9 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                     minLines: 1,
                   ),
                 ),
+                // --- MODIFICATION START ---
+                // REMOVED the Refresh IconButton from this area
+                // --- MODIFICATION END ---
                 IconButton(
                   icon: const Icon(Icons.add, color: kEiraTextSecondary),
                   onPressed: widget.onFileAdd,
@@ -2457,7 +2543,6 @@ class VideoRecordingPreview extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Display the camera preview
             if (cameraController.value.isInitialized)
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -2468,7 +2553,6 @@ class VideoRecordingPreview extends StatelessWidget {
                 ),
               )
             else
-              // Show a loader while the camera initializes
               const SizedBox(
                 width: 240,
                 height: 320,
@@ -2478,7 +2562,6 @@ class VideoRecordingPreview extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // The "Stop Recording" button
                 ElevatedButton(
                   onPressed: onStopRecording,
                   style: ElevatedButton.styleFrom(
@@ -2493,7 +2576,6 @@ class VideoRecordingPreview extends StatelessWidget {
                       style: TextStyle(fontFamily: 'Roboto')),
                 ),
                 const SizedBox(width: 16),
-                // The "Close" button
                 OutlinedButton(
                   onPressed: onClose,
                   style: OutlinedButton.styleFrom(
