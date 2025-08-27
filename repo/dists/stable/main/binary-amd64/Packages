@@ -1,0 +1,15 @@
+Package: eira-flutter
+Version: 1.0.0
+Architecture: amd64
+Depends: libgtk-3-0, libblkid1, liblzma5, libstdc++6, libgl1, libx11-6
+Maintainer: owaizsajida@gmail.com
+Priority: optional
+Section: base
+Filename: pool/main/e/eira-flutter/eira-flutter_1.0.0_amd64.deb
+Size: 13641346
+SHA256: 0a88517d71e42d272ff4859b2fda598b26c234046575ba124776f8e7106b0884
+SHA1: c618632a8175e89138322b812aeeae17e609025e
+MD5sum: 7b92a1770b3afd9ff63e527e2fde4d07
+Description: Eira - Flutter AI Health App
+ A health monitoring Flutter app with AI features.
+

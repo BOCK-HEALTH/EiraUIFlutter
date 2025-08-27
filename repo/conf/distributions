@@ -1,0 +1,7 @@
+Origin: Eira
+Label: Eira
+Suite: stable
+Codename: stable
+Architectures: amd64
+Components: main
+Description: Eira Flutter AI Health App

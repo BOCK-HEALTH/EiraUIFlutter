@@ -1,0 +1,29 @@
+name: eira-flutter-aws
+base: core22
+version: '1.0.0'
+summary: Eira Flutter AWS App
+description: |
+  Flutter desktop app packaged as a snap.
+
+grade: stable
+confinement: strict
+
+apps:
+  eira-flutter-aws:
+    command: flutter_application_1
+    plugs:
+      - desktop
+      - desktop-legacy
+      - x11
+      - wayland
+      - network
+
+parts:
+  eira-flutter-aws:
+    source: build/linux/x64/release/bundle
+    plugin: dump
+    stage-packages:
+      - libgtk-3-0
+      - libstdc++6
+      - libglu1-mesa
+      - libgl1

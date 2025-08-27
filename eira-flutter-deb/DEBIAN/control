@@ -1,0 +1,9 @@
+Package: eira-flutter
+Version: 1.0.0
+Section: base
+Priority: optional
+Architecture: amd64
+Depends: libgtk-3-0, libblkid1, liblzma5, libstdc++6, libgl1, libx11-6
+Maintainer: owaizsajida@gmail.com
+Description: Eira - Flutter AI Health App
+ A health monitoring Flutter app with AI features.

@@ -1,0 +1,20 @@
+Origin: Eira
+Label: Eira
+Suite: stable
+Codename: stable
+Date: Wed, 27 Aug 2025 07:49:10 UTC
+Architectures: amd64
+Components: main
+Description: Eira Flutter AI Health App
+MD5Sum:
+ 17a7cadc53250217ed0b24cb0e6c7b4b 529 main/binary-amd64/Packages
+ 645c4e7e8469c867885238e549393ac7 386 main/binary-amd64/Packages.gz
+ 598a495221a42f0f7a21c59f38aeac34 117 main/binary-amd64/Release
+SHA1:
+ 4c0e374a2ae8c815954c42df3d434b47c212ec10 529 main/binary-amd64/Packages
+ 3e0194f6ad89540d5e60a522485e9714b35b7e96 386 main/binary-amd64/Packages.gz
+ 8aeae5fee28bbcbf28e8bba33eaacaa8ea91695f 117 main/binary-amd64/Release
+SHA256:
+ 67c5d15fee0572c85af2b7a2d8b178e5da25fc4ac6281a03526bc1dc722205a3 529 main/binary-amd64/Packages
+ 3ce1839691b21a9805b808a3497ed58fa651e8fe34288eec357eca20c5e68806 386 main/binary-amd64/Packages.gz
+ fb31f26f97f7e825051753abbfb874e6bf5d4f0be671e55b8522212244053b03 117 main/binary-amd64/Release
