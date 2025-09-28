@@ -14,7 +14,7 @@ import 'package:flutter_application_1/models/platform_file_wrapper.dart';
 
 class ApiService {
   // IMPORTANT: Make sure this IP address is correct for your EC2 instance.
-  final String _baseUrl = "http://13.60.232.100:8080"; 
+  final String _baseUrl = "http://16.171.25.142:8080"; 
   final Dio _dio = Dio();
   final _storage = const FlutterSecureStorage();
 
