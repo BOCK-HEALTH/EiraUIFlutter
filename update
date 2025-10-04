@@ -1,0 +1,11 @@
+server {
+    listen 80;
+    server_name 51.21.219.212;  # Use IP for now; update to domain later
+
+    root /var/www/html;
+    index index.html index.htm;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
