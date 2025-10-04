@@ -10,11 +10,12 @@ import 'package:http_parser/http_parser.dart';
 import 'package:flutter_application_1/models/chat_session.dart';
 import 'package:flutter_application_1/models/chat_message.dart';
 import 'package:flutter_application_1/models/platform_file_wrapper.dart';
-
+import 'package:flutter/foundation.dart'; // For kIsWeb
+import 'dart:html' as html; // For localStorage fallback (web only)
 
 class ApiService {
   // IMPORTANT: Make sure this IP address is correct for your EC2 instance.
-  final String _baseUrl = "http://16.171.29.159:8080"; 
+  final String _baseUrl = "http://13.61.173.50:8080"; 
   final Dio _dio = Dio();
   final _storage = const FlutterSecureStorage();
 
@@ -45,36 +46,70 @@ class ApiService {
   }
 
   Future<void> login({ required String email, required String password }) async {
-    try {
-      final response = await _dio.post(
-        '$_baseUrl/api/login',
-        data: { 'email': email, 'password': password },
-      );
-      
-      // If login is successful, store the token AND the user info
-      if (response.statusCode == 200 && response.data['token'] != null) {
-        final token = response.data['token'];
-        final user = response.data['user'];
-
-        await _storage.write(key: 'jwt_token', value: token);
-
-        // Store user info locally for offline access
-        if (user != null) {
-          await _storage.write(key: 'user_info', value: jsonEncode(user));
-          if (user['name'] != null) {
-            await _storage.write(key: 'user_name', value: user['name']);
-          }
-          if (user['email'] != null) {
-            await _storage.write(key: 'user_email', value: user['email']);
-          }
-        }
-      }
-    } on DioException catch (e) {
-      final errorMessage = e.response?.data['error'] ?? 'Login failed.';
-      throw Exception(errorMessage);
+  try {
+    final response = await _dio.post(
+      '$_baseUrl/api/login',
+      data: { 'email': email, 'password': password },
+    );
+    
+    // Debug log: Print full response (remove in production)
+    print('Login Response Status: ${response.statusCode}');
+    print('Login Response Body: ${response.data}');
+    
+    // Safely cast and validate response data
+    if (response.statusCode != 200) {
+      throw Exception('Login failed: Server returned ${response.statusCode}');
     }
+    
+    final Map<String, dynamic> data = response.data is Map ? response.data as Map<String, dynamic> : {};
+    final String? token = data['token']?.toString();
+    final Map<String, dynamic>? user = data['user'] is Map ? data['user'] as Map<String, dynamic>? : null;
+    
+    print('Extracted token: $token'); // Debug: Check token
+    print('Extracted user: $user');   // Debug: Check user
+    
+    if (token == null || token.isEmpty) {
+      // Handle missing/invalid token (e.g., bad creds)
+      final errorMsg = data['error'] ?? data['message'] ?? 'Login failed: No valid token received';
+      throw Exception(errorMsg);
+    }
+    
+    // Store token using safe helper
+    print('Storing token...'); // Debug
+    await _safeWrite('jwt_token', token);
+    print('Token stored!'); // Debug
+    
+    // Store user info if present
+    if (user != null) {
+      print('Storing user info...'); // Debug
+      final userJson = jsonEncode(user);
+      print('JSON encoded user: $userJson'); // Debug
+      await _safeWrite('user_info', userJson);
+      
+      final name = user['name']?.toString();
+      if (name != null && name.isNotEmpty) {
+        await _safeWrite('user_name', name);
+        print('User name stored: $name'); // Debug
+      }
+      
+      final emailStr = user['email']?.toString();
+      if (emailStr != null && emailStr.isNotEmpty) {
+        await _safeWrite('user_email', emailStr);
+        print('User email stored: $emailStr'); // Debug
+      }
+    }
+    
+    print('Login successful: Token and user info stored'); // Debug
+  } on DioException catch (e) {
+    print('DioException in login: ${e.message}'); // Debug
+    final errorMessage = e.response?.data['error'] ?? e.response?.data['message'] ?? 'Login failed.';
+    throw Exception(errorMessage.toString());
+  } catch (e) {
+    print('Unexpected error in login: $e'); // Catch-all debug
+    print('Stack trace: ${StackTrace.current}'); // More debug info
+    throw Exception('Login failed: $e');
   }
-
+}
   Future<void> logout() async {
     await _storage.delete(key: 'jwt_token');
     await _storage.deleteAll();
@@ -127,6 +162,23 @@ class ApiService {
     }
   }
 
+// Helper: Safe storage write with web fallback (prevents crashes on HTTP/web)
+Future<void> _safeWrite(String key, String value) async {
+  try {
+    await _storage.write(key: key, value: value);
+    print('Secure storage write success: $key'); // Debug
+  } catch (e) {
+    print('Secure storage failed for $key: $e - Using localStorage fallback'); // Debug
+    // Web fallback: Use native localStorage (works on HTTP)
+    if (kIsWeb) {
+      html.window.localStorage[key] = value;
+      print('LocalStorage fallback success: $key'); // Debug
+    } else {
+      // Non-web: Re-throw (mobile/desktop should use secure storage)
+      rethrow;
+    }
+  }
+}
   // --- Data Fetching Methods ---
 
   Future<List<ChatSession>> fetchSessions() async {
